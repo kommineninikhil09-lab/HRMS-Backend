@@ -1,0 +1,1 @@
+export const POOL_PROVIDER = 'DATABASE_POOL';

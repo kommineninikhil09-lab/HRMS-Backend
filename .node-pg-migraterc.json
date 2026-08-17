@@ -1,0 +1,9 @@
+{
+  "dir": "migrations",
+  "migrationsDir": "migrations",
+  "schema": "public",
+  "autoRun": false,
+  "singleTransaction": false,
+  "log-stdout": true,
+  "log-stderr": true
+}
