@@ -22,9 +22,7 @@ export class UsersController {
   ) {}
 
   @Get('/me')
-  async getCurrentUser(
-    @Request() req: any,
-  ): Promise<{ success: boolean; data: UserWithPermissions }> {
+  async getCurrentUser(@Request() req: any): Promise<UserWithPermissions> {
     const tenantContext: TenantContext = req.tenantContext;
 
     const user = await this.usersService.getUserById(
@@ -43,15 +41,12 @@ export class UsersController {
     );
 
     return {
-      success: true,
-      data: {
-        id: user.id,
-        email: user.email,
-        firstName: user.firstName,
-        lastName: user.lastName,
-        roles,
-        permissions,
-      },
+      id: user.id,
+      email: user.email,
+      firstName: user.firstName,
+      lastName: user.lastName,
+      roles,
+      permissions,
     };
   }
 }
