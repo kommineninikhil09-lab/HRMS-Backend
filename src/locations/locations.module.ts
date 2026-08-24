@@ -1,14 +1,13 @@
-import { Module } from '@nestjs/common';
-import { DatabaseModule } from '../database/database.module';
+﻿import { Module } from '@nestjs/common';
 import { AuditModule } from '../audit/audit.module';
-import { LocationsController } from './locations.controller';
-import { LocationsService } from './locations.service';
 import { LocationsRepository } from './locations.repository';
+import { LocationsService } from './locations.service';
+import { LocationsController } from './locations.controller';
 
 @Module({
-  imports: [DatabaseModule, AuditModule],
+  imports: [AuditModule],
   controllers: [LocationsController],
-  providers: [LocationsService, LocationsRepository],
-  exports: [LocationsService, LocationsRepository],
+  providers: [LocationsRepository, LocationsService],
+  exports: [LocationsService],
 })
 export class LocationsModule {}

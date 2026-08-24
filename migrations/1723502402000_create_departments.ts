@@ -1,6 +1,5 @@
-import { MigrationBuilder } from 'node-pg-migrate';
 
-export async function up(pgm: MigrationBuilder): Promise<void> {
+export async function up(pgm: any): Promise<void> {
   pgm.createTable('departments', {
     id: { type: 'uuid', primaryKey: true, default: pgm.func('gen_random_uuid()') },
     organization_id: { type: 'uuid', notNull: true, references: '"organizations"(id)' },
@@ -26,7 +25,8 @@ export async function up(pgm: MigrationBuilder): Promise<void> {
   pgm.createIndex('departments', ['status']);
 }
 
-export async function down(pgm: MigrationBuilder): Promise<void> {
+export async function down(pgm: any): Promise<void> {
   pgm.dropTable('departments', { ifExists: true });
 }
+
 

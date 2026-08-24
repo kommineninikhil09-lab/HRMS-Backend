@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Put, Delete, Body, Param, UseGuards } from '@nestjs/common';
+﻿import { Controller, Get, Post, Put, Delete, Body, Param, UseGuards } from '@nestjs/common';
 import { LocationsService } from './locations.service';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { RequirePermissions } from '../common/decorators/require-permissions.decorator';
@@ -10,39 +10,10 @@ import type { TenantContext } from '../database/tenant-context';
 @UseGuards(JwtAuthGuard, PermissionsGuard)
 export class LocationsController {
   constructor(private service: LocationsService) {}
-
-  @Post()
-  @RequirePermissions('organization.write')
-  async create(@CurrentUser() ctx: TenantContext, @Body() dto: any) {
-    const location = await this.service.create(ctx, dto);
-    return { success: true, data: location };
-  }
-
-  @Get()
-  @RequirePermissions('organization.read')
-  async getAll(@CurrentUser() ctx: TenantContext) {
-    const locations = await this.service.getAll(ctx);
-    return { success: true, data: locations };
-  }
-
-  @Get(':id')
-  @RequirePermissions('organization.read')
-  async getById(@CurrentUser() ctx: TenantContext, @Param('id') id: string) {
-    const location = await this.service.getById(ctx, id);
-    return { success: true, data: location };
-  }
-
-  @Put(':id')
-  @RequirePermissions('organization.write')
-  async update(@CurrentUser() ctx: TenantContext, @Param('id') id: string, @Body() dto: any) {
-    const location = await this.service.update(ctx, id, dto);
-    return { success: true, data: location };
-  }
-
-  @Delete(':id')
-  @RequirePermissions('organization.write')
-  async delete(@CurrentUser() ctx: TenantContext, @Param('id') id: string) {
-    await this.service.delete(ctx, id);
-    return { success: true, message: 'Location deleted' };
-  }
+  @Post() @RequirePermissions('organization_structure.write') async create(@CurrentUser() tc: TenantContext, @Body() dto: any) { return { success: true, data: await this.service.create(tc, dto) }; }
+  @Get() @RequirePermissions('organization_structure.read') async getAll(@CurrentUser() tc: TenantContext) { return { success: true, data: await this.service.getAll(tc) }; }
+  @Get(':id') @RequirePermissions('organization_structure.read') async getById(@CurrentUser() tc: TenantContext, @Param('id') id: string) { return { success: true, data: await this.service.getById(tc, id) }; }
+  @Put(':id') @RequirePermissions('organization_structure.write') async update(@CurrentUser() tc: TenantContext, @Param('id') id: string, @Body() dto: any) { return { success: true, data: await this.service.update(tc, id, dto) }; }
+  @Delete(':id') @RequirePermissions('organization_structure.write') async delete(@CurrentUser() tc: TenantContext, @Param('id') id: string) { await this.service.delete(tc, id); return { success: true }; }
 }
+

@@ -1,6 +1,5 @@
-import { MigrationBuilder } from 'node-pg-migrate';
 
-export async function up(pgm: MigrationBuilder): Promise<void> {
+export async function up(pgm: any): Promise<void> {
   pgm.createTable('employees', {
     id: { type: 'uuid', primaryKey: true, default: pgm.func('gen_random_uuid()') },
     organization_id: { type: 'uuid', notNull: true, references: '"organizations"(id)' },
@@ -30,15 +29,11 @@ export async function up(pgm: MigrationBuilder): Promise<void> {
     updated_by: { type: 'uuid', references: '"users"(id)' },
   }, { ifNotExists: true });
 
-  pgm.createConstraint('employees', 'uq_employees_org_code', {
-    unique: ['organization_id', 'employee_code'],
-  });
+  // Add unique indexes instead of constraints for better control
+  pgm.createIndex('employees', ['organization_id', 'employee_code'], { unique: true, name: 'idx_uq_employees_org_code', ifNotExists: true });
+  pgm.createIndex('employees', ['organization_id', 'work_email'], { unique: true, name: 'idx_uq_employees_org_email', ifNotExists: true });
 
-  pgm.createConstraint('employees', 'uq_employees_org_email', {
-    unique: ['organization_id', 'work_email'],
-  });
-
-  pgm.createIndex('employees', ['organization_id']);
+  pgm.createIndex('employees', ['organization_id'], { ifNotExists: true });
   pgm.createIndex('employees', ['user_id']);
   pgm.createIndex('employees', ['department_id']);
   pgm.createIndex('employees', ['location_id']);
@@ -47,7 +42,8 @@ export async function up(pgm: MigrationBuilder): Promise<void> {
   pgm.createIndex('employees', ['date_of_joining']);
 }
 
-export async function down(pgm: MigrationBuilder): Promise<void> {
+export async function down(pgm: any): Promise<void> {
   pgm.dropTable('employees', { ifExists: true });
 }
+
 

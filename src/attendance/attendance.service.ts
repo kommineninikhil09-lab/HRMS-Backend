@@ -34,7 +34,9 @@ export class AttendanceService {
     employeeId: string,
     dto: ClockInDTO,
   ): Promise<AttendanceRecord> {
-    const employee = await this.employeesRepository.findById(tenantContext, employeeId);
+    console.log(`[clockIn] Looking up employee with userId: ${employeeId}, orgId: ${tenantContext.organizationId}`);
+    const employee = await this.employeesRepository.findByUserId(tenantContext, employeeId);
+    console.log(`[clockIn] Employee lookup result:`, employee);
     if (!employee) {
       throw new NotFoundException('Employee not found');
     }
@@ -42,7 +44,7 @@ export class AttendanceService {
     const today = new Date().toISOString().split('T')[0];
 
     return this.transactionService.runInTransaction(async (client) => {
-      let attendance = await this.repository.findByDate(tenantContext, employeeId, today, client);
+      let attendance = await this.repository.findByDate(tenantContext, employee.id, today, client);
 
       if (attendance && attendance.clock_in_time) {
         throw new BadRequestException('Already clocked in today');
@@ -52,7 +54,7 @@ export class AttendanceService {
         attendance = await this.repository.create(
           tenantContext,
           {
-            employee_id: employeeId,
+            employee_id: employee.id,
             attendance_date: today,
             clock_in_time: new Date().toISOString(),
             status: 'present',
@@ -93,7 +95,7 @@ export class AttendanceService {
     employeeId: string,
     dto: ClockOutDTO,
   ): Promise<AttendanceRecord> {
-    const employee = await this.employeesRepository.findById(tenantContext, employeeId);
+    const employee = await this.employeesRepository.findByUserId(tenantContext, employeeId);
     if (!employee) {
       throw new NotFoundException('Employee not found');
     }
@@ -101,7 +103,7 @@ export class AttendanceService {
     const today = new Date().toISOString().split('T')[0];
 
     return this.transactionService.runInTransaction(async (client) => {
-      const attendance = await this.repository.findByDate(tenantContext, employeeId, today, client);
+      const attendance = await this.repository.findByDate(tenantContext, employee.id, today, client);
 
       if (!attendance) {
         throw new BadRequestException('No attendance record found for today');
@@ -173,7 +175,6 @@ export class AttendanceService {
             attendance_date: dto.attendance_date,
             status: dto.status,
             notes: dto.notes,
-            marked_by: markedById,
           },
           client,
         );

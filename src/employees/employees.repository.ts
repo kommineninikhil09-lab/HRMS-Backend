@@ -98,6 +98,15 @@ export class EmployeesRepository extends BaseRepository {
     return result.rows[0] as Employee | undefined;
   }
 
+  async findByUserId(tenantContext: TenantContext, userId: string, executor?: Pool | PoolClient) {
+    const query = `
+      SELECT * FROM employees
+      WHERE user_id = $1 AND organization_id = $2
+    `;
+    const result = await (executor || this.pool).query(query, [userId, tenantContext.organizationId]);
+    return result.rows[0] as Employee | undefined;
+  }
+
   async findAll(tenantContext: TenantContext, filters?: { status?: string; department_id?: string }, executor?: Pool | PoolClient) {
     let query = `SELECT * FROM employees WHERE organization_id = $1`;
     const values: any[] = [tenantContext.organizationId];

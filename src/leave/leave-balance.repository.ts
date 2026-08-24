@@ -8,7 +8,7 @@ export interface LeaveBalance {
   organization_id: string;
   employee_id: string;
   leave_type_id: string;
-  financial_year: string;
+  financial_year: number;
   opening_balance: number;
   allocated: number;
   used: number;
@@ -51,7 +51,7 @@ export class LeaveBalanceRepository extends BaseRepository {
     tenantContext: TenantContext,
     employeeId: string,
     leaveTypeId: string,
-    financialYear: string,
+    financialYear: number,
     executor?: Pool | PoolClient,
   ): Promise<LeaveBalance | null> {
     const exe = executor || this.pool;
@@ -71,7 +71,7 @@ export class LeaveBalanceRepository extends BaseRepository {
   async findByEmployee(
     tenantContext: TenantContext,
     employeeId: string,
-    financialYear: string,
+    financialYear: number,
     executor?: Pool | PoolClient,
   ): Promise<LeaveBalance[]> {
     const exe = executor || this.pool;
@@ -121,7 +121,7 @@ export class LeaveBalanceRepository extends BaseRepository {
     tenantContext: TenantContext,
     employeeId: string,
     leaveTypeId: string,
-    financialYear: string,
+    financialYear: number,
     executor?: Pool | PoolClient,
   ): Promise<number> {
     const balance = await this.findByEmployeeAndType(

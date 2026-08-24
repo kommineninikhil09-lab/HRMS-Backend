@@ -227,6 +227,21 @@ export class LeaveService {
     return this.leaveRequestsRepo.findPendingApprovals(tenantContext, approverId);
   }
 
+  async getLeaveRequestById(
+    tenantContext: TenantContext,
+    requestId: string,
+  ) {
+    const request = await this.leaveRequestsRepo.findById(tenantContext, requestId);
+    if (!request) {
+      throw new NotFoundException('Leave request not found');
+    }
+    return request;
+  }
+
+  async getLeaveTypes(tenantContext: TenantContext) {
+    return this.leaveTypesRepo.findAll(tenantContext);
+  }
+
   private calculateBusinessDays(startDate: Date, endDate: Date): number {
     let count = 0;
     const curDate = new Date(startDate);
@@ -240,23 +255,17 @@ export class LeaveService {
     return count;
   }
 
-  private getCurrentFinancialYear(): string {
+  private getCurrentFinancialYear(): number {
     const today = new Date();
     const year = today.getFullYear();
-    const month = today.getMonth() + 1;
-
-    if (month >= 4) {
-      return `${year}-${year + 1}`;
-    } else {
-      return `${year - 1}-${year}`;
-    }
+    return year;
   }
 
   private async getBalanceId(
     tenantContext: TenantContext,
     employeeId: string,
     leaveTypeId: string,
-    financialYear: string,
+    financialYear: number,
     client: PoolClient,
   ): Promise<string> {
     const balance = await this.leaveBalanceRepo.findByEmployeeAndType(

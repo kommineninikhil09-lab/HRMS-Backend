@@ -1,17 +1,5 @@
-import {
-  Controller,
-  Get,
-  Post,
-  Put,
-  Delete,
-  Body,
-  Param,
-  Query,
-  UseGuards,
-} from '@nestjs/common';
+﻿import { Controller, Get, Post, Put, Delete, Body, Param, UseGuards } from '@nestjs/common';
 import { BusinessUnitsService } from './business-units.service';
-import { CreateBusinessUnitDto } from './dto/create-business-unit.dto';
-import { UpdateBusinessUnitDto } from './dto/update-business-unit.dto';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { RequirePermissions } from '../common/decorators/require-permissions.decorator';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
@@ -21,54 +9,11 @@ import type { TenantContext } from '../database/tenant-context';
 @Controller('business-units')
 @UseGuards(JwtAuthGuard, PermissionsGuard)
 export class BusinessUnitsController {
-  constructor(private readonly service: BusinessUnitsService) {}
-
-  @Post()
-  @RequirePermissions('organization.write')
-  async create(@CurrentUser() tenantContext: TenantContext, @Body() dto: CreateBusinessUnitDto) {
-    const unit = await this.service.create(tenantContext, dto);
-    return { success: true, data: unit };
-  }
-
-  @Get()
-  @RequirePermissions('organization.read')
-  async getAll(
-    @CurrentUser() tenantContext: TenantContext,
-    @Query('status') status?: string,
-  ) {
-    const units = await this.service.getAll(tenantContext, { status });
-    return { success: true, data: units };
-  }
-
-  @Get(':id')
-  @RequirePermissions('organization.read')
-  async getById(@CurrentUser() tenantContext: TenantContext, @Param('id') id: string) {
-    const unit = await this.service.getById(tenantContext, id);
-    return { success: true, data: unit };
-  }
-
-  @Get(':id/children')
-  @RequirePermissions('organization.read')
-  async getChildren(@CurrentUser() tenantContext: TenantContext, @Param('id') id: string) {
-    const children = await this.service.getChildren(tenantContext, id);
-    return { success: true, data: children };
-  }
-
-  @Put(':id')
-  @RequirePermissions('organization.write')
-  async update(
-    @CurrentUser() tenantContext: TenantContext,
-    @Param('id') id: string,
-    @Body() dto: UpdateBusinessUnitDto,
-  ) {
-    const unit = await this.service.update(tenantContext, id, dto);
-    return { success: true, data: unit };
-  }
-
-  @Delete(':id')
-  @RequirePermissions('organization.write')
-  async delete(@CurrentUser() tenantContext: TenantContext, @Param('id') id: string) {
-    await this.service.delete(tenantContext, id);
-    return { success: true, message: 'Business unit deleted' };
-  }
+  constructor(private service: BusinessUnitsService) {}
+  @Post() @RequirePermissions('organization_structure.write') async create(@CurrentUser() tc: TenantContext, @Body() dto: any) { return { success: true, data: await this.service.create(tc, dto) }; }
+  @Get() @RequirePermissions('organization_structure.read') async getAll(@CurrentUser() tc: TenantContext) { return { success: true, data: await this.service.getAll(tc) }; }
+  @Get(':id') @RequirePermissions('organization_structure.read') async getById(@CurrentUser() tc: TenantContext, @Param('id') id: string) { return { success: true, data: await this.service.getById(tc, id) }; }
+  @Put(':id') @RequirePermissions('organization_structure.write') async update(@CurrentUser() tc: TenantContext, @Param('id') id: string, @Body() dto: any) { return { success: true, data: await this.service.update(tc, id, dto) }; }
+  @Delete(':id') @RequirePermissions('organization_structure.write') async delete(@CurrentUser() tc: TenantContext, @Param('id') id: string) { await this.service.delete(tc, id); return { success: true }; }
 }
+

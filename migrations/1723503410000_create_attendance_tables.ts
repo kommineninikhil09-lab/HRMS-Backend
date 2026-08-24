@@ -1,6 +1,5 @@
-import { MigrationBuilder } from 'node-pg-migrate';
 
-export async function up(pgm: MigrationBuilder): Promise<void> {
+export async function up(pgm: any): Promise<void> {
   // Attendance table - daily records
   pgm.createTable('attendance', {
     id: { type: 'uuid', primaryKey: true, default: pgm.func('gen_random_uuid()') },
@@ -116,10 +115,11 @@ export async function up(pgm: MigrationBuilder): Promise<void> {
   pgm.createIndex('holidays', ['holiday_date']);
 }
 
-export async function down(pgm: MigrationBuilder): Promise<void> {
+export async function down(pgm: any): Promise<void> {
   pgm.dropTable('holidays', { ifExists: true });
   pgm.dropTable('leave_requests', { ifExists: true });
   pgm.dropTable('leave_balance', { ifExists: true });
   pgm.dropTable('leave_types', { ifExists: true });
   pgm.dropTable('attendance', { ifExists: true });
 }
+

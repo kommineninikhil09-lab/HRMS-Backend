@@ -54,8 +54,8 @@ export class LeaveController {
     @CurrentUser() tenantContext: TenantContext,
     @Param('id') id: string,
   ) {
-    // Implementation for fetching specific leave request
-    return { success: true, data: {} };
+    const request = await this.service.getLeaveRequestById(tenantContext, id);
+    return { success: true, data: request };
   }
 
   @Get('balance')
@@ -118,5 +118,14 @@ export class LeaveController {
       status,
     );
     return { success: true, data: requests };
+  }
+
+  @Get('types')
+  @RequirePermissions('leave.read')
+  async getLeaveTypes(
+    @CurrentUser() tenantContext: TenantContext,
+  ) {
+    const types = await this.service.getLeaveTypes(tenantContext);
+    return { success: true, data: types };
   }
 }

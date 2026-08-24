@@ -304,11 +304,24 @@ async function seed() {
     console.log('👨‍💼 Creating employee records...');
     const currentYear = new Date().getFullYear();
 
+    // Create employee records for Admin
+    const adminEmpResult = await client.query<{ id: string }>(
+      `
+      INSERT INTO employees (organization_id, user_id, employee_code, first_name, last_name, work_email, date_of_joining, status)
+      VALUES ($1, $2, $3, $4, $5, $6, NOW()::DATE, $7)
+      ON CONFLICT (organization_id, employee_code) DO UPDATE SET user_id = EXCLUDED.user_id, updated_at = NOW()
+      RETURNING id
+      `,
+      [organizationId, adminUserId, 'ADM001', 'Admin', 'User', 'admin@dev-org.local', 'active'],
+    );
+    const adminEmpId = adminEmpResult.rows[0].id;
+
     // Create employee records for HR Manager
     const hrManagerEmpResult = await client.query<{ id: string }>(
       `
       INSERT INTO employees (organization_id, user_id, employee_code, first_name, last_name, work_email, date_of_joining, status)
       VALUES ($1, $2, $3, $4, $5, $6, NOW()::DATE, $7)
+      ON CONFLICT (organization_id, employee_code) DO UPDATE SET user_id = EXCLUDED.user_id, updated_at = NOW()
       RETURNING id
       `,
       [organizationId, hrManagerUserId, 'HRM001', 'HR', 'Manager', 'hrmanager@dev-org.local', 'active'],
@@ -320,12 +333,13 @@ async function seed() {
       `
       INSERT INTO employees (organization_id, user_id, employee_code, first_name, last_name, work_email, date_of_joining, status)
       VALUES ($1, $2, $3, $4, $5, $6, NOW()::DATE, $7)
+      ON CONFLICT (organization_id, employee_code) DO UPDATE SET user_id = EXCLUDED.user_id, updated_at = NOW()
       RETURNING id
       `,
       [organizationId, employeeUserId, 'EMP001', 'John', 'Employee', 'employee@dev-org.local', 'active'],
     );
     const employeeEmpId = employeeEmpResult.rows[0].id;
-    console.log(`✓ 2 employee records created`);
+    console.log(`✓ 3 employee records created`);
 
     // 10. Create leave types
     console.log('🏖️ Creating leave types...');
@@ -354,8 +368,9 @@ async function seed() {
 
     // 11. Create leave balance for employees
     console.log('📊 Initializing leave balance...');
+
     for (const leaveTypeId of leaveTypeIds) {
-      for (const empId of [hrManagerEmpId, employeeEmpId]) {
+      for (const empId of [adminEmpId, hrManagerEmpId, employeeEmpId]) {
         await client.query(
           `
           INSERT INTO leave_balance (organization_id, employee_id, leave_type_id, financial_year, allocated, opening_balance)
@@ -366,7 +381,7 @@ async function seed() {
         );
       }
     }
-    console.log(`✓ Leave balance initialized for employees`);
+    console.log(`✓ Leave balance initialized for employees (FY: ${currentYear})`);
 
     await client.query('COMMIT');
 

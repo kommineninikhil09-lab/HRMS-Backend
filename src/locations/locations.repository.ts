@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+﻿import { Injectable } from '@nestjs/common';
 import { BaseRepository } from '../database/base.repository';
 import { TenantContext } from '../database/tenant-context';
 import { Pool, PoolClient } from 'pg';
@@ -71,7 +71,7 @@ export class LocationsRepository extends BaseRepository {
   }
 
   async update(tenantContext: TenantContext, id: string, data: Partial<Location>, executor?: Pool | PoolClient) {
-    const updates: string[] = [];
+    const updates = [] as any[];
     const values: any[] = [id, tenantContext.organizationId];
     let paramIndex = 3;
 
@@ -120,3 +120,6 @@ export class LocationsRepository extends BaseRepository {
     await (executor || this.pool).query(query, [id, tenantContext.organizationId]);
   }
 }
+
+
+

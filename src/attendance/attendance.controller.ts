@@ -8,11 +8,10 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { AttendanceService } from './attendance.service';
-import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { RequirePermissions } from '../common/decorators/require-permissions.decorator';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { PermissionsGuard } from '../common/guards/permissions.guard';
-import type { TenantContext } from '../database/tenant-context';
+import { TenantContextDecorator, type TenantContext } from '../database/tenant-context';
 
 @Controller('attendance')
 @UseGuards(JwtAuthGuard, PermissionsGuard)
@@ -22,7 +21,7 @@ export class AttendanceController {
   @Post('clock-in')
   @RequirePermissions('attendance.write')
   async clockIn(
-    @CurrentUser() tenantContext: TenantContext,
+    @TenantContextDecorator() tenantContext: TenantContext,
     @Body() dto: { notes?: string },
   ) {
     const record = await this.service.clockIn(tenantContext, tenantContext.userId, dto);
@@ -32,7 +31,7 @@ export class AttendanceController {
   @Post('clock-out')
   @RequirePermissions('attendance.write')
   async clockOut(
-    @CurrentUser() tenantContext: TenantContext,
+    @TenantContextDecorator() tenantContext: TenantContext,
     @Body() dto: { notes?: string },
   ) {
     const record = await this.service.clockOut(tenantContext, tenantContext.userId, dto);
@@ -42,7 +41,7 @@ export class AttendanceController {
   @Post('mark')
   @RequirePermissions('attendance.manage')
   async markAttendance(
-    @CurrentUser() tenantContext: TenantContext,
+    @TenantContextDecorator() tenantContext: TenantContext,
     @Body() dto: any,
   ) {
     const record = await this.service.markAttendance(tenantContext, dto, tenantContext.userId);
@@ -52,7 +51,7 @@ export class AttendanceController {
   @Get('date/:date')
   @RequirePermissions('attendance.read')
   async getByDate(
-    @CurrentUser() tenantContext: TenantContext,
+    @TenantContextDecorator() tenantContext: TenantContext,
     @Param('date') date: string,
   ) {
     const record = await this.service.getAttendanceByDate(
@@ -66,7 +65,7 @@ export class AttendanceController {
   @Get('range')
   @RequirePermissions('attendance.read')
   async getByDateRange(
-    @CurrentUser() tenantContext: TenantContext,
+    @TenantContextDecorator() tenantContext: TenantContext,
     @Query('startDate') startDate: string,
     @Query('endDate') endDate: string,
   ) {
@@ -82,7 +81,7 @@ export class AttendanceController {
   @Get('summary')
   @RequirePermissions('attendance.read')
   async getSummary(
-    @CurrentUser() tenantContext: TenantContext,
+    @TenantContextDecorator() tenantContext: TenantContext,
     @Query('month') month: string,
   ) {
     const summary = await this.service.getAttendanceSummary(
@@ -96,7 +95,7 @@ export class AttendanceController {
   @Get('employee/:employeeId/date/:date')
   @RequirePermissions('attendance.read')
   async getEmployeeByDate(
-    @CurrentUser() tenantContext: TenantContext,
+    @TenantContextDecorator() tenantContext: TenantContext,
     @Param('employeeId') employeeId: string,
     @Param('date') date: string,
   ) {
@@ -107,7 +106,7 @@ export class AttendanceController {
   @Get('employee/:employeeId/range')
   @RequirePermissions('attendance.read')
   async getEmployeeByDateRange(
-    @CurrentUser() tenantContext: TenantContext,
+    @TenantContextDecorator() tenantContext: TenantContext,
     @Param('employeeId') employeeId: string,
     @Query('startDate') startDate: string,
     @Query('endDate') endDate: string,

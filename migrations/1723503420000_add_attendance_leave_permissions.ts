@@ -1,6 +1,5 @@
-import { MigrationBuilder } from 'node-pg-migrate';
 
-export async function up(pgm: MigrationBuilder): Promise<void> {
+export async function up(pgm: any): Promise<void> {
   const permissions = [
     {
       code: 'attendance.read',
@@ -43,7 +42,7 @@ export async function up(pgm: MigrationBuilder): Promise<void> {
   }
 }
 
-export async function down(pgm: MigrationBuilder): Promise<void> {
+export async function down(pgm: any): Promise<void> {
   const codes = [
     'attendance.read',
     'attendance.write',
@@ -57,3 +56,4 @@ export async function down(pgm: MigrationBuilder): Promise<void> {
     await pgm.sql(`DELETE FROM permissions WHERE code = '${code}';`);
   }
 }
+

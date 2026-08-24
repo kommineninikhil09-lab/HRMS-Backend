@@ -1,14 +1,13 @@
-import { Module } from '@nestjs/common';
-import { DatabaseModule } from '../database/database.module';
+﻿import { Module } from '@nestjs/common';
 import { AuditModule } from '../audit/audit.module';
-import { BusinessUnitsController } from './business-units.controller';
-import { BusinessUnitsService } from './business-units.service';
 import { BusinessUnitsRepository } from './business-units.repository';
+import { BusinessUnitsService } from './business-units.service';
+import { BusinessUnitsController } from './business-units.controller';
 
 @Module({
-  imports: [DatabaseModule, AuditModule],
+  imports: [AuditModule],
   controllers: [BusinessUnitsController],
-  providers: [BusinessUnitsService, BusinessUnitsRepository],
-  exports: [BusinessUnitsService, BusinessUnitsRepository],
+  providers: [BusinessUnitsRepository, BusinessUnitsService],
+  exports: [BusinessUnitsService],
 })
 export class BusinessUnitsModule {}

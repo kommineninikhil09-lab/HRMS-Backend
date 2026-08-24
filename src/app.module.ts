@@ -23,11 +23,18 @@ import { OrganizationsModule } from './organizations/organizations.module';
 import { BusinessUnitsModule } from './business-units/business-units.module';
 import { LocationsModule } from './locations/locations.module';
 import { DepartmentsModule } from './departments/departments.module';
+import { TeamsModule } from './teams/teams.module';
+import { GradesModule } from './grades/grades.module';
+import { DesignationsModule } from './designations/designations.module';
+import { CostCentersModule } from './cost-centers/cost-centers.module';
 import { EmploymentHistoryModule } from './employment-history/employment-history.module';
 import { EmployeesModule } from './employees/employees.module';
 import { AttendanceModule } from './attendance/attendance.module';
 import { LeaveModule } from './leave/leave.module';
 import { ESSModule } from './ess/ess.module';
+import { PayrollModule } from './payroll/payroll.module';
+import { PerformanceModule } from './performance/performance.module';
+import { CommunityModule } from './community/community.module';
 
 @Module({
   imports: [
@@ -46,11 +53,18 @@ import { ESSModule } from './ess/ess.module';
     BusinessUnitsModule,
     LocationsModule,
     DepartmentsModule,
+    TeamsModule,
+    GradesModule,
+    DesignationsModule,
+    CostCentersModule,
     EmploymentHistoryModule,
     EmployeesModule,
     AttendanceModule,
     LeaveModule,
     ESSModule,
+    PayrollModule,
+    PerformanceModule,
+    CommunityModule,
   ],
   controllers: [HealthController],
   providers: [
