@@ -30,7 +30,7 @@ export class GradesRepository extends BaseRepository {
     return r.rows;
   }
   async update(tc: TenantContext, id: string, data: Partial<Grades>, ex?: Pool | PoolClient) {
-    const updates = [], values: any[] = [];
+    const updates: string[] = [], values: any[] = [];
     let i = 1;
     if (data.name) { updates.push(`name = $${i++}`); values.push(data.name); }
     if (data.code) { updates.push(`code = $${i++}`); values.push(data.code); }
