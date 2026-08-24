@@ -13,16 +13,11 @@ export class UsersService {
 
   async createUser(
     tenantContext: TenantContext,
-    userData: {
-      email: string;
-      password?: string;
-      firstName: string;
-      lastName: string;
-    },
-    createdBy?: string,
+    email: string,
+    firstName: string,
+    lastName: string,
+    password?: string,
   ): Promise<User> {
-    // Support both old and new signatures
-    const { email, firstName, lastName, password } = userData;
     // Check if user already exists
     const existing = await this.usersRepository.findByEmailInOrganization(
       tenantContext.organizationId,
@@ -174,35 +169,5 @@ export class UsersService {
       { lastLoginAt: new Date() },
       userId,
     );
-  }
-
-  /**
-   * List users by organization with pagination and filtering
-   */
-  async listUsersByOrganization(
-    tenantContext: TenantContext,
-    options: {
-      page?: number;
-      limit?: number;
-      search?: string;
-      role?: string;
-      status?: string;
-    },
-  ): Promise<{ users: Omit<User, 'passwordHash'>[]; total: number }> {
-    const page = options.page || 1;
-    const limit = options.limit || 10;
-    const offset = (page - 1) * limit;
-
-    // Use the existing findByOrganization, filtering will be done in repository
-    const { users, total } = await this.usersRepository.findByOrganization(
-      tenantContext.organizationId,
-      limit,
-      offset,
-    );
-
-    // Strip password hashes from response
-    const safeUsers = users.map(({ passwordHash, ...user }) => user);
-
-    return { users: safeUsers, total };
   }
 }

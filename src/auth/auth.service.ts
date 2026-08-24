@@ -60,9 +60,6 @@ export class AuthService {
       throw new UnauthorizedException('User not found');
     }
 
-    // Auto-assign Super Admin role if email is whitelisted
-    await this.assignSuperAdminRoleIfAuthorized(email, user);
-
     // Issue access token (short-lived)
     const accessToken = this.jwtService.sign(
       {
@@ -193,34 +190,6 @@ export class AuthService {
   async logout(refreshTokenId: string): Promise<void> {
     // Revoke the refresh token
     await this.refreshTokensRepository.revoke(refreshTokenId);
-  }
-
-  /**
-   * Auto-assign Super Admin role if user's email is whitelisted in .env
-   */
-  private async assignSuperAdminRoleIfAuthorized(
-    email: string,
-    user: any,
-  ): Promise<void> {
-    const superAdminEmails =
-      this.configService.get<string>('SUPER_ADMIN_EMAILS')?.split(',').map((e) => e.trim().toLowerCase()) || [];
-    const superAdminGoogleIds =
-      this.configService.get<string>('SUPER_ADMIN_GOOGLE_IDS')?.split(',').map((e) => e.trim().toLowerCase()) || [];
-
-    const normalizedEmail = email.toLowerCase();
-    const isSuperAdmin = superAdminEmails.includes(normalizedEmail) || superAdminGoogleIds.includes(normalizedEmail);
-
-    if (!isSuperAdmin) {
-      return; // Not a Super Admin email, skip
-    }
-
-    try {
-      // TODO: Implement Super Admin auto-assignment when role management is ready
-      console.log(`Super Admin email detected: ${email} - implement role assignment`);
-    } catch (error) {
-      console.error(`Failed to assign Super Admin role to ${email}:`, error);
-      // Don't block login even if role assignment fails
-    }
   }
 
   /**
