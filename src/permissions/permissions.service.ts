@@ -117,4 +117,18 @@ export class PermissionsService {
       return [];
     }
   }
+
+  async listRoles(
+    organizationId: string,
+  ): Promise<{ id: string; name: string }[]> {
+    const query = `
+      SELECT id, name
+      FROM roles
+      WHERE organization_id = $1
+      ORDER BY name ASC
+    `;
+
+    const result = await this.pool.query<{ id: string; name: string }>(query, [organizationId]);
+    return result.rows;
+  }
 }

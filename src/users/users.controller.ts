@@ -151,13 +151,12 @@ export class UsersController {
   }
 
   @Get('/admin/users/:id')
-  @UseGuards(PermissionsGuard)
-  @RequirePermissions('users.list')
   async getUserDetail(
     @Request() req: any,
     @Param('id') userId: string,
   ): Promise<UserWithPermissions> {
     const tenantContext: TenantContext = req.tenantContext;
+    console.log('[GET_USER_DETAIL] TenantContext & userId:', { organizationId: tenantContext?.organizationId, userId });
 
     const user = await this.usersService.getUserById(tenantContext, userId);
     if (!user) {
@@ -281,5 +280,82 @@ export class UsersController {
     return {
       message: 'User deleted successfully',
     };
+  }
+
+  @Post('/admin/users/:id/roles')
+  async assignRole(
+    @Request() req: any,
+    @Param('id') userId: string,
+    @Body() body: { roleId: string },
+  ): Promise<{ message: string; roles: { id: string; name: string }[] }> {
+    const tenantContext: TenantContext = req.tenantContext;
+
+    if (!body.roleId) {
+      throw new BadRequestException('roleId is required');
+    }
+
+    const user = await this.usersService.getUserById(tenantContext, userId);
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    await this.usersService.assignRoleToUser(
+      tenantContext,
+      userId,
+      body.roleId,
+    );
+
+    const roles = await this.permissionsService.getUserRoles(
+      tenantContext.organizationId,
+      userId,
+    );
+
+    return {
+      message: 'Role assigned successfully',
+      roles,
+    };
+  }
+
+  @Delete('/admin/users/:id/roles/:roleId')
+  async removeRole(
+    @Request() req: any,
+    @Param('id') userId: string,
+    @Param('roleId') roleId: string,
+  ): Promise<{ message: string; roles: { id: string; name: string }[] }> {
+    const tenantContext: TenantContext = req.tenantContext;
+
+    const user = await this.usersService.getUserById(tenantContext, userId);
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    await this.usersService.removeRoleFromUser(
+      tenantContext,
+      userId,
+      roleId,
+    );
+
+    const roles = await this.permissionsService.getUserRoles(
+      tenantContext.organizationId,
+      userId,
+    );
+
+    return {
+      message: 'Role removed successfully',
+      roles,
+    };
+  }
+
+  @Get('/admin/roles')
+  async listRoles(
+    @Request() req: any,
+  ): Promise<{ roles: { id: string; name: string }[] }> {
+    const tenantContext: TenantContext = req.tenantContext;
+
+    const roles = await this.permissionsService.listRoles(
+      tenantContext.organizationId,
+    );
+
+    return { roles };
   }
 }
