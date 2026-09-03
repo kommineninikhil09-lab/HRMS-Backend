@@ -148,6 +148,12 @@ export class LeaveBalanceRepository extends BaseRepository {
 
     if (!balance) return 0;
 
-    return balance.allocated + balance.carry_forward - balance.used - balance.pending;
+    return (
+      balance.opening_balance +
+      balance.allocated +
+      balance.carry_forward -
+      balance.used -
+      balance.pending
+    );
   }
 }

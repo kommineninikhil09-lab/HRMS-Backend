@@ -315,6 +315,45 @@ async function seed() {
 
     console.log(`✓ Roles assigned to users`);
 
+    // 8b. Super Admin role.
+    // Migration 1724180000000 creates this system role and grants it every
+    // permission that exists at migration time. seed.ts adds further permission
+    // codes (user.*, role.*, employee.*, …), so re-grant the full catalogue here
+    // to keep "Super Admin = all permissions". The migration deliberately does
+    // not assign the role to anyone; for local dev we give it to the admin user.
+    console.log('👑 Configuring Super Admin role...');
+    const superAdminRoleResult = await client.query<{ id: string }>(
+      `
+      INSERT INTO roles (organization_id, name, description, is_system)
+      VALUES ($1, 'Super Admin', 'Full access to every permission', TRUE)
+      ON CONFLICT (organization_id, name) DO UPDATE SET updated_at = NOW()
+      RETURNING id
+      `,
+      [organizationId],
+    );
+    const superAdminRoleId = superAdminRoleResult.rows[0].id;
+
+    const superAdminGrant = await client.query(
+      `
+      INSERT INTO role_permissions (organization_id, role_id, permission_id)
+      SELECT $1, $2, p.id FROM permissions p
+      ON CONFLICT (role_id, permission_id) DO NOTHING
+      `,
+      [organizationId, superAdminRoleId],
+    );
+
+    await client.query(
+      `
+      INSERT INTO user_roles (organization_id, user_id, role_id, assigned_by)
+      VALUES ($1, $2, $3, $4)
+      ON CONFLICT (user_id, role_id) DO NOTHING
+      `,
+      [organizationId, adminUserId, superAdminRoleId, adminUserId],
+    );
+    console.log(
+      `✓ Super Admin role holds every permission (${superAdminGrant.rowCount} new grants) and is assigned to admin@dev-org.local`,
+    );
+
     // 9. Create employee records for users (Phase 1)
     console.log('👨‍💼 Creating employee records...');
     const currentFinancialYear = getFinancialYear();

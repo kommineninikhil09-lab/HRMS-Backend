@@ -16,3 +16,13 @@ export function toIsoDate(
   }
   return String(value).slice(0, 10);
 }
+
+/**
+ * Parse a `YYYY-MM-DD` string to a **local-midnight** `Date`. Built from the
+ * numeric parts (not `new Date(str)`, which parses as UTC) so day-of-week and
+ * day iteration are correct regardless of the server timezone.
+ */
+export function parseIsoDate(iso: string): Date {
+  const [y, m, d] = iso.split('-').map(Number);
+  return new Date(y, (m || 1) - 1, d || 1);
+}

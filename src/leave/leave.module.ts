@@ -7,9 +7,17 @@ import { LeaveBalanceRepository } from './leave-balance.repository';
 import { DatabaseModule } from '../database/database.module';
 import { AuditModule } from '../audit/audit.module';
 import { EmployeesModule } from '../employees/employees.module';
+import { HolidaysModule } from '../holidays/holidays.module';
+import { PermissionsModule } from '../permissions/permissions.module';
 
 @Module({
-  imports: [DatabaseModule, AuditModule, EmployeesModule],
+  imports: [
+    DatabaseModule,
+    AuditModule,
+    EmployeesModule,
+    HolidaysModule,
+    PermissionsModule,
+  ],
   controllers: [LeaveController],
   providers: [
     LeaveService,

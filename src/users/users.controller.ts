@@ -31,19 +31,6 @@ interface UserWithPermissions {
   permissions: string[];
 }
 
-interface UserListResponse {
-  success: boolean;
-  data: {
-    users: UserWithPermissions[];
-    pagination: {
-      page: number;
-      limit: number;
-      total: number;
-      totalPages: number;
-    };
-  };
-}
-
 interface CreateUserDto {
   email: string;
   password: string;
@@ -58,17 +45,17 @@ interface UpdateUserDto {
 }
 
 @Controller('users')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, PermissionsGuard)
 export class UsersController {
   constructor(
     private usersService: UsersService,
     private permissionsService: PermissionsService,
   ) {}
 
+  // ---- self-service (any authenticated user) ----
+
   @Get('/me')
-  async getCurrentUser(
-    @Request() req: any,
-  ): Promise<UserWithPermissions> {
+  async getCurrentUser(@Request() req: any): Promise<UserWithPermissions> {
     const tenantContext: TenantContext = req.tenantContext;
 
     const user = await this.usersService.getUserById(
@@ -76,7 +63,7 @@ export class UsersController {
       tenantContext.userId,
     );
 
-    let roles = await this.permissionsService.getUserRoles(
+    const roles = await this.permissionsService.getUserRoles(
       tenantContext.organizationId,
       tenantContext.userId,
     );
@@ -85,11 +72,6 @@ export class UsersController {
       tenantContext.organizationId,
       tenantContext.userId,
     );
-
-    // TODO: Debug why roles are empty - for now, assign Admin role to admin@dev-org.local
-    if (roles.length === 0 && user.email === 'admin@dev-org.local') {
-      roles = [{ id: 'b1e41f7f-e907-4170-9099-efc3b4dbd53e', name: 'Admin' }];
-    }
 
     return {
       id: user.id,
@@ -126,18 +108,16 @@ export class UsersController {
     };
   }
 
+  // ---- administration (permission-gated) ----
+
   @Get('/admin/users')
+  @RequirePermissions('user.read')
   async listUsers(
     @Request() req: any,
-    @Query('page') page: string = '1',
-    @Query('limit') limit: string = '10',
-    @Query('search') search?: string,
-  ): Promise<any> {
+    @Query('page') page = '1',
+    @Query('limit') limit = '10',
+  ) {
     const tenantContext: TenantContext = req.tenantContext;
-    console.log('[LIST_USERS] TenantContext:', {
-      organizationId: tenantContext?.organizationId,
-      userId: tenantContext?.userId,
-    });
 
     const pageNum = parseInt(page, 10) || 1;
     const limitNum = parseInt(limit, 10) || 10;
@@ -183,19 +163,14 @@ export class UsersController {
   }
 
   @Get('/admin/users/:id')
+  @RequirePermissions('user.read')
   async getUserDetail(
     @Request() req: any,
     @Param('id') userId: string,
   ): Promise<UserWithPermissions> {
     const tenantContext: TenantContext = req.tenantContext;
 
-    console.log('[GET_USER_DETAIL] TenantContext & userId:', {
-      organizationId: tenantContext?.organizationId,
-      userId,
-    });
-
     const user = await this.usersService.getUserById(tenantContext, userId);
-
     if (!user) {
       throw new NotFoundException('User not found');
     }
@@ -204,7 +179,6 @@ export class UsersController {
       tenantContext.organizationId,
       userId,
     );
-
     const permissions = await this.permissionsService.getEffectivePermissions(
       tenantContext.organizationId,
       userId,
@@ -221,17 +195,12 @@ export class UsersController {
   }
 
   @Post('/admin/users')
-  @UseGuards(JwtAuthGuard)
+  @RequirePermissions('user.create')
   async createUser(
     @Request() req: any,
     @Body() createUserDto: CreateUserDto,
   ): Promise<UserWithPermissions> {
     const tenantContext: TenantContext = req.tenantContext;
-
-    console.log('[CREATE_USER] TenantContext:', {
-      organizationId: tenantContext.organizationId,
-      userId: tenantContext.userId,
-    });
 
     if (!createUserDto.email || !createUserDto.password) {
       throw new BadRequestException('Email and password required');
@@ -249,7 +218,6 @@ export class UsersController {
       tenantContext.organizationId,
       user.id,
     );
-
     const permissions = await this.permissionsService.getEffectivePermissions(
       tenantContext.organizationId,
       user.id,
@@ -266,8 +234,7 @@ export class UsersController {
   }
 
   @Put('/admin/users/:id')
-  @UseGuards(PermissionsGuard)
-  @RequirePermissions('users.edit')
+  @RequirePermissions('user.update')
   async updateUser(
     @Request() req: any,
     @Param('id') userId: string,
@@ -285,7 +252,6 @@ export class UsersController {
       tenantContext.organizationId,
       user.id,
     );
-
     const permissions = await this.permissionsService.getEffectivePermissions(
       tenantContext.organizationId,
       user.id,
@@ -302,8 +268,7 @@ export class UsersController {
   }
 
   @Delete('/admin/users/:id')
-  @UseGuards(PermissionsGuard)
-  @RequirePermissions('users.delete')
+  @RequirePermissions('user.delete')
   async deleteUser(
     @Request() req: any,
     @Param('id') userId: string,
@@ -318,12 +283,11 @@ export class UsersController {
       status: 'inactive',
     });
 
-    return {
-      message: 'User deleted successfully',
-    };
+    return { message: 'User deleted successfully' };
   }
 
   @Post('/admin/users/:id/roles')
+  @RequirePermissions('user.update')
   async assignRole(
     @Request() req: any,
     @Param('id') userId: string,
@@ -336,29 +300,22 @@ export class UsersController {
     }
 
     const user = await this.usersService.getUserById(tenantContext, userId);
-
     if (!user) {
       throw new NotFoundException('User not found');
     }
 
-    await this.usersService.assignRoleToUser(
-      tenantContext,
-      userId,
-      body.roleId,
-    );
+    await this.usersService.assignRoleToUser(tenantContext, userId, body.roleId);
 
     const roles = await this.permissionsService.getUserRoles(
       tenantContext.organizationId,
       userId,
     );
 
-    return {
-      message: 'Role assigned successfully',
-      roles,
-    };
+    return { message: 'Role assigned successfully', roles };
   }
 
   @Delete('/admin/users/:id/roles/:roleId')
+  @RequirePermissions('user.update')
   async removeRole(
     @Request() req: any,
     @Param('id') userId: string,
@@ -367,29 +324,22 @@ export class UsersController {
     const tenantContext: TenantContext = req.tenantContext;
 
     const user = await this.usersService.getUserById(tenantContext, userId);
-
     if (!user) {
       throw new NotFoundException('User not found');
     }
 
-    await this.usersService.removeRoleFromUser(
-      tenantContext,
-      userId,
-      roleId,
-    );
+    await this.usersService.removeRoleFromUser(tenantContext, userId, roleId);
 
     const roles = await this.permissionsService.getUserRoles(
       tenantContext.organizationId,
       userId,
     );
 
-    return {
-      message: 'Role removed successfully',
-      roles,
-    };
+    return { message: 'Role removed successfully', roles };
   }
 
   @Get('/admin/roles')
+  @RequirePermissions('role.read')
   async listRoles(
     @Request() req: any,
   ): Promise<{ roles: { id: string; name: string }[] }> {
