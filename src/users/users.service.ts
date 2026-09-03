@@ -1,14 +1,17 @@
-import { Injectable, BadRequestException, NotFoundException, Optional } from '@nestjs/common';
+import { Injectable, BadRequestException, NotFoundException, Optional, Inject } from '@nestjs/common';
 import * as bcrypt from 'bcrypt';
 import { UsersRepository, User } from './users.repository';
 import { TenantContext } from '../database/tenant-context';
 import { AuditService } from '../audit/audit.service';
+import { Pool } from 'pg';
+import { POOL_PROVIDER } from '../database/pool.provider';
 
 @Injectable()
 export class UsersService {
   constructor(
     private usersRepository: UsersRepository,
     @Optional() private auditService?: AuditService,
+    @Inject(POOL_PROVIDER) private pool?: Pool,
   ) {}
 
   async createUser(
@@ -169,5 +172,60 @@ export class UsersService {
       { lastLoginAt: new Date() },
       userId,
     );
+  }
+
+  async assignRoleToUser(
+    tenantContext: TenantContext,
+    userId: string,
+    roleId: string,
+  ): Promise<void> {
+    if (!this.pool) {
+      throw new Error('Database pool not available');
+    }
+
+    // Check if role exists
+    const roleCheck = await this.pool.query(
+      'SELECT id FROM roles WHERE id = $1 AND organization_id = $2',
+      [roleId, tenantContext.organizationId],
+    );
+
+    if (roleCheck.rows.length === 0) {
+      throw new NotFoundException('Role not found');
+    }
+
+    // Check if user already has this role
+    const existing = await this.pool.query(
+      'SELECT id FROM user_roles WHERE user_id = $1 AND role_id = $2',
+      [userId, roleId],
+    );
+
+    if (existing.rows.length > 0) {
+      throw new BadRequestException('User already has this role');
+    }
+
+    // Assign role
+    await this.pool.query(
+      'INSERT INTO user_roles (user_id, role_id, organization_id) VALUES ($1, $2, $3)',
+      [userId, roleId, tenantContext.organizationId],
+    );
+  }
+
+  async removeRoleFromUser(
+    tenantContext: TenantContext,
+    userId: string,
+    roleId: string,
+  ): Promise<void> {
+    if (!this.pool) {
+      throw new Error('Database pool not available');
+    }
+
+    const result = await this.pool.query(
+      'DELETE FROM user_roles WHERE user_id = $1 AND role_id = $2 AND organization_id = $3',
+      [userId, roleId, tenantContext.organizationId],
+    );
+
+    if (result.rowCount === 0) {
+      throw new NotFoundException('User role assignment not found');
+    }
   }
 }
