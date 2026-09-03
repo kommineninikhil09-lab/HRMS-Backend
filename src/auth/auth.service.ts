@@ -120,76 +120,100 @@ export class AuthService {
     organizationId: string,
     refreshTokenId: string,
   ): Promise<RefreshResponse> {
-    // Verify refresh token exists and is not revoked
-    const refreshToken = await this.refreshTokensRepository.findById(
-      refreshTokenId,
-    );
+    const stored = await this.refreshTokensRepository.findById(refreshTokenId);
 
-    if (!refreshToken) {
+    if (!stored) {
       throw new UnauthorizedException('Refresh token not found');
     }
 
-    if (refreshToken.revokedAt) {
+    // Reuse detection: a token that has already been rotated is being replayed.
+    // Treat it as compromised and revoke the whole family.
+    if (stored.replacedByTokenId) {
+      await this.refreshTokensRepository.revokeAllForUser(
+        organizationId,
+        userId,
+      );
+      throw new UnauthorizedException('Refresh token has already been used');
+    }
+
+    if (stored.revokedAt) {
       throw new UnauthorizedException('Refresh token has been revoked');
     }
 
-    if (new Date() > refreshToken.expiresAt) {
+    if (new Date() > stored.expiresAt) {
       throw new UnauthorizedException('Refresh token has expired');
     }
 
-    // Issue new access token
+    // Look up the user so the new access token carries a real email claim.
+    const email = await this.usersService
+      .getUserById(
+        { organizationId, userId, employeeId: null, requestId: '' },
+        userId,
+      )
+      .then((u) => u.email)
+      .catch(() => '');
+
+    const jwtSecret = this.configService.get('auth.jwtSecret');
+    const refreshExpiresIn =
+      this.configService.get('auth.refreshTokenExpiresIn') || '7d';
+
     const accessToken = this.jwtService.sign(
+      { sub: userId, organizationId, email },
       {
-        sub: userId,
-        organizationId,
-        email: '', // Could be populated from DB if needed
-      },
-      {
-        secret: this.configService.get('auth.jwtSecret'),
+        secret: jwtSecret,
         expiresIn: this.configService.get('auth.jwtExpiresIn'),
       },
     );
 
-    // Issue new refresh token and rotate
-    const refreshTokenExpiresIn = this.parseExpiresIn(
-      this.configService.get('auth.refreshTokenExpiresIn') || '7d',
+    // Rotate the refresh token atomically: mint the new row, then mark the old
+    // one replaced + revoked so a replay of it is caught by both checks above.
+    const newRefreshTokenId = await this.transactionService.runInTransaction(
+      async (client) => {
+        const { id } = await this.refreshTokensRepository.create(
+          organizationId,
+          userId,
+          this.parseExpiresIn(refreshExpiresIn),
+          undefined,
+          client,
+        );
+        await this.refreshTokensRepository.markReplaced(
+          refreshTokenId,
+          id,
+          client,
+        );
+        await this.refreshTokensRepository.revoke(refreshTokenId, client);
+        return id;
+      },
     );
 
-    const { id: newRefreshTokenId, token: newRefreshToken } =
-      await this.refreshTokensRepository.create(
-        organizationId,
-        userId,
-        refreshTokenExpiresIn,
-      );
-
-    // Mark old token as replaced by new one
-    await this.refreshTokensRepository.markReplaced(
-      refreshTokenId,
-      newRefreshTokenId,
-    );
-
-    // Create JWT for new refresh token
     const newRefreshTokenJwt = this.jwtService.sign(
-      {
-        sub: userId,
-        organizationId,
-        tokenId: newRefreshTokenId,
-      },
-      {
-        secret: this.configService.get('auth.jwtSecret'),
-        expiresIn: this.configService.get('auth.refreshTokenExpiresIn'),
-      },
+      { sub: userId, organizationId, tokenId: newRefreshTokenId },
+      { secret: jwtSecret, expiresIn: refreshExpiresIn },
     );
 
-    return {
-      accessToken,
-      refreshToken: newRefreshTokenJwt,
-    };
+    return { accessToken, refreshToken: newRefreshTokenJwt };
   }
 
   async logout(refreshTokenId: string): Promise<void> {
-    // Revoke the refresh token
     await this.refreshTokensRepository.revoke(refreshTokenId);
+  }
+
+  /**
+   * Revoke the refresh token behind a refresh JWT. Best-effort and idempotent:
+   * an invalid or expired token simply means there is nothing to revoke.
+   */
+  async logoutByRefreshToken(refreshToken: string): Promise<void> {
+    try {
+      const payload = this.jwtService.verify<{ tokenId?: string }>(
+        refreshToken,
+        { secret: this.configService.get('auth.jwtSecret') },
+      );
+      if (payload?.tokenId) {
+        await this.refreshTokensRepository.revoke(payload.tokenId);
+      }
+    } catch {
+      // invalid / expired refresh token — nothing to revoke
+    }
   }
 
   /**

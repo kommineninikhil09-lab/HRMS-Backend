@@ -15,11 +15,24 @@ export class ResponseEnvelopeInterceptor implements NestInterceptor {
     const requestId = (request as any).requestId;
 
     return next.handle().pipe(
-      map((data) => ({
-        success: true,
-        data,
-        requestId,
-      })),
+      map((payload) => {
+        // If a controller already returned an envelope ({ success, ... }), don't
+        // wrap it a second time — just attach the requestId. Otherwise treat the
+        // return value as the `data` payload and wrap it once.
+        if (
+          payload !== null &&
+          typeof payload === 'object' &&
+          'success' in payload
+        ) {
+          return { ...(payload as Record<string, unknown>), requestId };
+        }
+
+        return {
+          success: true,
+          data: payload,
+          requestId,
+        };
+      }),
     );
   }
 }

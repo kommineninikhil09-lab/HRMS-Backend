@@ -9,10 +9,11 @@ import {
   BadRequestException,
   Query,
 } from '@nestjs/common';
+import { AuthGuard } from '@nestjs/passport';
 import { AuthService, LoginResponse, RefreshResponse } from './auth.service';
 import { LoginDto } from './dto/login.dto';
 import { Public } from '../common/decorators/public.decorator';
-import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
+import { LoginThrottleGuard } from './guards/login-throttle.guard';
 import { EntraAuthProvider } from './providers/entra-auth.provider';
 
 @Controller('auth')
@@ -24,46 +25,41 @@ export class AuthController {
 
   @Post('login')
   @Public()
+  @UseGuards(LoginThrottleGuard)
   @HttpCode(200)
   async login(@Body() loginDto: LoginDto, @Request() req): Promise<LoginResponse> {
     const clientIp = (req.ip || req.connection?.remoteAddress || '').split(':').pop();
     return this.authService.login(loginDto.email, loginDto.password, clientIp);
   }
 
+  /**
+   * Rotate tokens. The refresh JWT is taken from the `refreshToken` body field
+   * and its signature + expiry are verified by the `jwt-refresh` strategy.
+   */
   @Post('refresh')
   @Public()
+  @UseGuards(AuthGuard('jwt-refresh'))
   @HttpCode(200)
-  async refresh(@Body() body: { refreshToken: string }): Promise<RefreshResponse> {
-    if (!body.refreshToken) {
-      throw new BadRequestException('refreshToken is required');
-    }
-
-    // Decode refresh token to get user info and token ID
-    try {
-      const decoded: any = this.authService['jwtService'].decode(body.refreshToken);
-
-      if (!decoded || !decoded.sub || !decoded.organizationId || !decoded.tokenId) {
-        throw new BadRequestException('Invalid refresh token');
-      }
-
-      return await this.authService.refresh(
-        decoded.sub,
-        decoded.organizationId,
-        decoded.tokenId,
-      );
-    } catch (error) {
-      throw new BadRequestException('Invalid refresh token');
-    }
+  async refresh(@Request() req): Promise<RefreshResponse> {
+    return this.authService.refresh(
+      req.user.sub,
+      req.user.organizationId,
+      req.user.tokenId,
+    );
   }
 
+  /**
+   * Revoke the caller's refresh token. Public + idempotent: it identifies the
+   * token to revoke from the `refreshToken` body field, so it still works once
+   * the access token has expired.
+   */
   @Post('logout')
-  @UseGuards(JwtAuthGuard)
+  @Public()
   @HttpCode(204)
-  async logout(@Request() req): Promise<void> {
-    // Extract refresh token ID from body if provided
-    // For now, this is a simple logout that doesn't require token revocation
-    // In a real app, you'd track which refresh tokens to revoke per user
-    return;
+  async logout(@Body() body: { refreshToken?: string }): Promise<void> {
+    if (body?.refreshToken) {
+      await this.authService.logoutByRefreshToken(body.refreshToken);
+    }
   }
 
   /**

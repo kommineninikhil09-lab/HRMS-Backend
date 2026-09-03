@@ -18,10 +18,10 @@
     "test:cov": "jest --coverage",
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
     "test:e2e": "jest --config ./test/jest-e2e.json",
-    "migrate": "node-pg-migrate",
-    "migrate:dev": "node-pg-migrate up",
-    "migrate:test": "node-pg-migrate up --envPath .env.test",
-    "migrate:down": "node-pg-migrate down",
+    "migrate": "node-pg-migrate --no-check-order",
+    "migrate:dev": "node-pg-migrate up --no-check-order",
+    "migrate:test": "node-pg-migrate up --envPath .env.test --no-check-order",
+    "migrate:down": "node-pg-migrate down --no-check-order",
     "seed:dev": "ts-node src/database/seeds/seed.ts"
   },
   "dependencies": {

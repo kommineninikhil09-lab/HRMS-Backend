@@ -1,8 +1,16 @@
-import { Controller, Get, UseGuards, Request } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Patch,
+  Body,
+  UseGuards,
+  Request,
+} from '@nestjs/common';
 import { UsersService } from './users.service';
 import { PermissionsService } from '../permissions/permissions.service';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { TenantContext } from '../database/tenant-context';
+import { UpdateMeDto } from './dto/update-me.dto';
 
 interface UserWithPermissions {
   id: string;
@@ -51,6 +59,31 @@ export class UsersController {
         lastName: user.lastName,
         roles,
         permissions,
+      },
+    };
+  }
+
+  @Patch('/me')
+  async updateCurrentUser(@Request() req: any, @Body() dto: UpdateMeDto) {
+    const tenantContext: TenantContext = req.tenantContext;
+
+    const data: { firstName?: string; lastName?: string } = {};
+    if (dto.firstName !== undefined) data.firstName = dto.firstName;
+    if (dto.lastName !== undefined) data.lastName = dto.lastName;
+
+    const user = await this.usersService.updateUser(
+      tenantContext,
+      tenantContext.userId,
+      data,
+    );
+
+    return {
+      success: true,
+      data: {
+        id: user.id,
+        email: user.email,
+        firstName: user.firstName,
+        lastName: user.lastName,
       },
     };
   }

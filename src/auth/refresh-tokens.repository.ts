@@ -108,6 +108,23 @@ export class RefreshTokensRepository extends BaseRepository {
   }
 
   /**
+   * Revoke every live refresh token for a user. Used as the response to detected
+   * token reuse (a rotated token being replayed).
+   */
+  async revokeAllForUser(
+    organizationId: string,
+    userId: string,
+    executor: Pool | PoolClient = this.pool,
+  ): Promise<void> {
+    const query = `
+      UPDATE refresh_tokens
+      SET revoked_at = NOW()
+      WHERE organization_id = $1 AND user_id = $2 AND revoked_at IS NULL
+    `;
+    await this.query(query, [organizationId, userId], executor);
+  }
+
+  /**
    * Mark a token as replaced by a new token (for rotation tracking)
    */
   async markReplaced(

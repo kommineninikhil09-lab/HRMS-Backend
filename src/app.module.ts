@@ -31,6 +31,7 @@ import { EmploymentHistoryModule } from './employment-history/employment-history
 import { EmployeesModule } from './employees/employees.module';
 import { AttendanceModule } from './attendance/attendance.module';
 import { LeaveModule } from './leave/leave.module';
+import { HolidaysModule } from './holidays/holidays.module';
 import { ESSModule } from './ess/ess.module';
 import { PayrollModule } from './payroll/payroll.module';
 import { PerformanceModule } from './performance/performance.module';
@@ -61,6 +62,7 @@ import { CommunityModule } from './community/community.module';
     EmployeesModule,
     AttendanceModule,
     LeaveModule,
+    HolidaysModule,
     ESSModule,
     PayrollModule,
     PerformanceModule,

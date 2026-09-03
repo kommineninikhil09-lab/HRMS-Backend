@@ -1,10 +1,15 @@
+import 'dotenv/config';
 import { Pool } from 'pg';
 import * as bcrypt from 'bcrypt';
 import * as crypto from 'crypto';
+import { getFinancialYear } from '../../common/util/financial-year.util';
 
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL || 'postgresql://hrms_admin:HRMS@4AT@localhost:5432/hrms_dev',
-});
+const connectionString = process.env.DATABASE_URL;
+if (!connectionString) {
+  throw new Error('DATABASE_URL is not set (expected in .env)');
+}
+
+const pool = new Pool({ connectionString });
 
 interface SeedData {
   organizationId: string;
@@ -53,6 +58,8 @@ async function seed() {
       ['permission.read', 'Read permissions', 'permission'],
       ['organization.read', 'Read organizations', 'organization'],
       ['organization.update', 'Update organizations', 'organization'],
+      ['organization_structure.read', 'View organization structure', 'organization'],
+      ['organization_structure.write', 'Manage organization structure', 'organization'],
       ['employee.read', 'Read employees', 'employee'],
       ['employee.create', 'Create employees', 'employee'],
       ['employee.update', 'Update employees', 'employee'],
@@ -68,6 +75,8 @@ async function seed() {
       ['leave.approve', 'Approve or reject leave requests', 'leave'],
       ['ess.read', 'View employee self-service profile and documents', 'ess'],
       ['ess.update', 'Update own employee profile', 'ess'],
+      ['holiday.read', 'View the holiday calendar', 'holiday'],
+      ['holiday.write', 'Create and remove holidays', 'holiday'],
     ];
 
     const permissionIds: Record<string, string> = {};
@@ -153,6 +162,8 @@ async function seed() {
       'employee.create',
       'employee.update',
       'organization.read',
+      'organization_structure.read',
+      'organization_structure.write',
       'audit.read',
       'attendance.read',
       'attendance.manage',
@@ -160,6 +171,8 @@ async function seed() {
       'leave.approve',
       'ess.read',
       'ess.update',
+      'holiday.read',
+      'holiday.write',
     ];
 
     for (const code of hrManagerPermissions) {
@@ -187,6 +200,8 @@ async function seed() {
       'leave.write',
       'ess.read',
       'ess.update',
+      'organization_structure.read',
+      'holiday.read',
     ];
 
     for (const code of employeePermissions) {
@@ -302,7 +317,7 @@ async function seed() {
 
     // 9. Create employee records for users (Phase 1)
     console.log('👨‍💼 Creating employee records...');
-    const currentYear = new Date().getFullYear();
+    const currentFinancialYear = getFinancialYear();
 
     // Create employee records for Admin
     const adminEmpResult = await client.query<{ id: string }>(
@@ -341,6 +356,18 @@ async function seed() {
     const employeeEmpId = employeeEmpResult.rows[0].id;
     console.log(`✓ 3 employee records created`);
 
+    // Reporting lines: EMP001 → HRM001 → ADM001, so the leave approval flow is
+    // testable (a request's approver is derived from the employee's manager).
+    await client.query(
+      `UPDATE employees SET manager_id = $1, updated_at = NOW() WHERE id = $2`,
+      [hrManagerEmpId, employeeEmpId],
+    );
+    await client.query(
+      `UPDATE employees SET manager_id = $1, updated_at = NOW() WHERE id = $2`,
+      [adminEmpId, hrManagerEmpId],
+    );
+    console.log('✓ Reporting lines set (EMP001 → HRM001 → ADM001)');
+
     // 10. Create leave types
     console.log('🏖️ Creating leave types...');
     const leaveTypes = [
@@ -350,7 +377,7 @@ async function seed() {
       ['UL', 'Unpaid Leave', 0, 0, true, false],
     ];
 
-    const leaveTypeIds: string[] = [];
+    const seededLeaveTypes: { id: string; annual: number }[] = [];
 
     for (const [code, name, annual, carryForward, requiresApproval, isPaid] of leaveTypes) {
       const result = await client.query<{ id: string }>(
@@ -362,26 +389,34 @@ async function seed() {
         `,
         [organizationId, code, name, annual, carryForward, requiresApproval, isPaid, 'active'],
       );
-      leaveTypeIds.push(result.rows[0].id);
+      seededLeaveTypes.push({ id: result.rows[0].id, annual: Number(annual) });
     }
     console.log(`✓ ${leaveTypes.length} leave types created`);
 
     // 11. Create leave balance for employees
     console.log('📊 Initializing leave balance...');
 
-    for (const leaveTypeId of leaveTypeIds) {
+    // Refresh dev balances so a re-seed adopts the current financial year
+    // ("YYYY-YYYY"); older rows were keyed by calendar year (e.g. "2026").
+    await client.query(
+      `DELETE FROM leave_balance WHERE organization_id = $1`,
+      [organizationId],
+    );
+
+    for (const lt of seededLeaveTypes) {
       for (const empId of [adminEmpId, hrManagerEmpId, employeeEmpId]) {
         await client.query(
           `
           INSERT INTO leave_balance (organization_id, employee_id, leave_type_id, financial_year, allocated, opening_balance)
           VALUES ($1, $2, $3, $4, $5, $6)
-          ON CONFLICT (organization_id, employee_id, leave_type_id, financial_year) DO NOTHING
+          ON CONFLICT (organization_id, employee_id, leave_type_id, financial_year)
+            DO UPDATE SET allocated = EXCLUDED.allocated
           `,
-          [organizationId, empId, leaveTypeId, currentYear, 12, 0],
+          [organizationId, empId, lt.id, currentFinancialYear, lt.annual, 0],
         );
       }
     }
-    console.log(`✓ Leave balance initialized for employees (FY: ${currentYear})`);
+    console.log(`✓ Leave balance initialized for employees (FY: ${currentFinancialYear})`);
 
     await client.query('COMMIT');
 

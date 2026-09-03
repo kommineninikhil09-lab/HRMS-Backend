@@ -6,6 +6,7 @@ import { EmployeesRepository } from '../employees/employees.repository';
 import { TenantContext } from '../database/tenant-context';
 import { AuditService } from '../audit/audit.service';
 import { TransactionService } from '../database/transaction.service';
+import { getFinancialYear } from '../common/util/financial-year.util';
 import { Pool, PoolClient } from 'pg';
 
 export interface CreateLeaveRequestDTO {
@@ -75,6 +76,18 @@ export class LeaveService {
         );
       }
 
+      // Resolve the approver as a USER id (leave_requests.approver_id references
+      // users(id)); employee.manager_id points at an employees row.
+      let approverUserId: string | null = null;
+      if (employee.manager_id) {
+        const manager = await this.employeesRepo.findById(
+          tenantContext,
+          employee.manager_id,
+          client,
+        );
+        approverUserId = manager?.user_id ?? null;
+      }
+
       const leaveRequest = await this.leaveRequestsRepo.create(
         tenantContext,
         {
@@ -85,16 +98,40 @@ export class LeaveService {
           duration_days: durationDays,
           reason: dto.reason,
           status: leaveType.requires_approval ? 'submitted' : 'approved',
-          approver_id: employee.manager_id,
+          approver_id: approverUserId ?? undefined,
         },
         client,
       );
 
-      if (!leaveType.requires_approval) {
+      const balanceId = await this.getBalanceId(
+        tenantContext,
+        employeeId,
+        dto.leave_type_id,
+        currentYear,
+        client,
+      );
+      const balance = await this.leaveBalanceRepo.findByEmployeeAndType(
+        tenantContext,
+        employeeId,
+        dto.leave_type_id,
+        currentYear,
+        client,
+      );
+
+      if (leaveRequest.status === 'approved') {
+        // Auto-approved (leave type needs no approval): consume immediately.
         await this.leaveBalanceRepo.updateBalance(
           tenantContext,
-          await this.getBalanceId(tenantContext, employeeId, dto.leave_type_id, currentYear, client),
-          { pending: availableBalance - durationDays },
+          balanceId,
+          { used: (balance?.used ?? 0) + durationDays },
+          client,
+        );
+      } else {
+        // Awaiting approval: hold the days as pending.
+        await this.leaveBalanceRepo.updateBalance(
+          tenantContext,
+          balanceId,
+          { pending: (balance?.pending ?? 0) + durationDays },
           client,
         );
       }
@@ -148,32 +185,44 @@ export class LeaveService {
         client,
       );
 
-      if (dto.approve) {
-        const currentYear = this.getCurrentFinancialYear();
-        const balanceId = await this.getBalanceId(
-          tenantContext,
-          leaveRequest.employee_id,
-          leaveRequest.leave_type_id,
-          currentYear,
-          client,
-        );
+      const currentYear = this.getCurrentFinancialYear();
+      const balanceId = await this.getBalanceId(
+        tenantContext,
+        leaveRequest.employee_id,
+        leaveRequest.leave_type_id,
+        currentYear,
+        client,
+      );
+      const currentBalance = await this.leaveBalanceRepo.findByEmployeeAndType(
+        tenantContext,
+        leaveRequest.employee_id,
+        leaveRequest.leave_type_id,
+        currentYear,
+        client,
+      );
 
-        const currentBalance = await this.leaveBalanceRepo.findByEmployeeAndType(
-          tenantContext,
-          leaveRequest.employee_id,
-          leaveRequest.leave_type_id,
-          currentYear,
-          client,
+      if (currentBalance) {
+        const releasedPending = Math.max(
+          0,
+          currentBalance.pending - leaveRequest.duration_days,
         );
-
-        if (currentBalance) {
+        if (dto.approve) {
+          // Move the held days from pending → used.
           await this.leaveBalanceRepo.updateBalance(
             tenantContext,
             balanceId,
             {
               used: currentBalance.used + leaveRequest.duration_days,
-              pending: currentBalance.pending - leaveRequest.duration_days,
+              pending: releasedPending,
             },
+            client,
+          );
+        } else {
+          // Rejected: release the held days.
+          await this.leaveBalanceRepo.updateBalance(
+            tenantContext,
+            balanceId,
+            { pending: releasedPending },
             client,
           );
         }
@@ -255,17 +304,15 @@ export class LeaveService {
     return count;
   }
 
-  private getCurrentFinancialYear(): number {
-    const today = new Date();
-    const year = today.getFullYear();
-    return year;
+  private getCurrentFinancialYear(): string {
+    return getFinancialYear();
   }
 
   private async getBalanceId(
     tenantContext: TenantContext,
     employeeId: string,
     leaveTypeId: string,
-    financialYear: number,
+    financialYear: string,
     client: PoolClient,
   ): Promise<string> {
     const balance = await this.leaveBalanceRepo.findByEmployeeAndType(

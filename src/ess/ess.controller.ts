@@ -5,6 +5,7 @@ import { RequirePermissions } from '../common/decorators/require-permissions.dec
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { PermissionsGuard } from '../common/guards/permissions.guard';
 import type { TenantContext } from '../database/tenant-context';
+import { requireEmployeeId } from '../common/util/require-employee.util';
 
 @Controller('ess')
 @UseGuards(JwtAuthGuard, PermissionsGuard)
@@ -16,7 +17,7 @@ export class ESSController {
   async getDashboard(@CurrentUser() tenantContext: TenantContext) {
     const dashboard = await this.service.getEmployeeDashboard(
       tenantContext,
-      tenantContext.userId,
+      requireEmployeeId(tenantContext),
     );
     return { success: true, data: dashboard };
   }
@@ -26,7 +27,7 @@ export class ESSController {
   async getProfile(@CurrentUser() tenantContext: TenantContext) {
     const profile = await this.service.getEmployeeProfile(
       tenantContext,
-      tenantContext.userId,
+      requireEmployeeId(tenantContext),
     );
     return { success: true, data: profile };
   }
@@ -39,7 +40,7 @@ export class ESSController {
   ) {
     const profile = await this.service.updateProfile(
       tenantContext,
-      tenantContext.userId,
+      requireEmployeeId(tenantContext),
       dto,
     );
     return { success: true, data: profile };
@@ -50,7 +51,7 @@ export class ESSController {
   async getDocuments(@CurrentUser() tenantContext: TenantContext) {
     const documents = await this.service.getEmployeeDocuments(
       tenantContext,
-      tenantContext.userId,
+      requireEmployeeId(tenantContext),
     );
     return { success: true, data: documents };
   }

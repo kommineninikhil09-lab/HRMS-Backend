@@ -24,7 +24,7 @@ export class EmployeesController {
   constructor(private readonly service: EmployeesService) {}
 
   @Post()
-  @RequirePermissions('employee.write')
+  @RequirePermissions('employee.create')
   async create(@CurrentUser() tenantContext: TenantContext, @Body() dto: CreateEmployeeDto) {
     const employee = await this.service.create(tenantContext, dto);
     return { success: true, data: employee };
@@ -49,7 +49,7 @@ export class EmployeesController {
   }
 
   @Put(':id')
-  @RequirePermissions('employee.write')
+  @RequirePermissions('employee.update')
   async update(
     @CurrentUser() tenantContext: TenantContext,
     @Param('id') id: string,
@@ -60,7 +60,7 @@ export class EmployeesController {
   }
 
   @Delete(':id')
-  @RequirePermissions('employee.write')
+  @RequirePermissions('employee.delete')
   async delete(@CurrentUser() tenantContext: TenantContext, @Param('id') id: string) {
     await this.service.delete(tenantContext, id);
     return { success: true, message: 'Employee deleted' };

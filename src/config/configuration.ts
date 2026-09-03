@@ -11,6 +11,8 @@ export default () => ({
     port: parseInt(process.env.PORT || '3000', 10),
     apiPrefix: process.env.API_PREFIX || '/api/v1',
     nodeEnv: process.env.NODE_ENV || 'development',
+    // Comma-separated list of allowed browser origins for CORS.
+    corsOrigin: process.env.CORS_ORIGIN || 'http://localhost:3001',
   },
   entra: {
     clientId: process.env.ENTRA_CLIENT_ID,

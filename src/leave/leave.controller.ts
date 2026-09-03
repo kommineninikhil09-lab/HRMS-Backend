@@ -14,6 +14,7 @@ import { RequirePermissions } from '../common/decorators/require-permissions.dec
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { PermissionsGuard } from '../common/guards/permissions.guard';
 import type { TenantContext } from '../database/tenant-context';
+import { requireEmployeeId } from '../common/util/require-employee.util';
 
 @Controller('leave')
 @UseGuards(JwtAuthGuard, PermissionsGuard)
@@ -28,7 +29,7 @@ export class LeaveController {
   ) {
     const request = await this.service.createLeaveRequest(
       tenantContext,
-      tenantContext.userId,
+      requireEmployeeId(tenantContext),
       dto,
     );
     return { success: true, data: request };
@@ -42,7 +43,7 @@ export class LeaveController {
   ) {
     const requests = await this.service.getEmployeeLeaveRequests(
       tenantContext,
-      tenantContext.userId,
+      requireEmployeeId(tenantContext),
       status,
     );
     return { success: true, data: requests };
@@ -60,10 +61,11 @@ export class LeaveController {
 
   @Get('balance')
   @RequirePermissions('leave.read')
-  async getLeaveBalance(
-    @CurrentUser() tenantContext: TenantContext,
-  ) {
-    const balance = await this.service.getLeaveBalance(tenantContext, tenantContext.userId);
+  async getLeaveBalance(@CurrentUser() tenantContext: TenantContext) {
+    const balance = await this.service.getLeaveBalance(
+      tenantContext,
+      requireEmployeeId(tenantContext),
+    );
     return { success: true, data: balance };
   }
 
@@ -84,6 +86,8 @@ export class LeaveController {
     @Param('id') id: string,
     @Body() dto: any,
   ) {
+    // The approver is identified by their user id (leave_requests.approver_id
+    // references users(id)).
     const request = await this.service.approveLeaveRequest(
       tenantContext,
       id,
@@ -95,9 +99,7 @@ export class LeaveController {
 
   @Get('approvals/pending')
   @RequirePermissions('leave.approve')
-  async getPendingApprovals(
-    @CurrentUser() tenantContext: TenantContext,
-  ) {
+  async getPendingApprovals(@CurrentUser() tenantContext: TenantContext) {
     const requests = await this.service.getPendingApprovals(
       tenantContext,
       tenantContext.userId,
@@ -122,9 +124,7 @@ export class LeaveController {
 
   @Get('types')
   @RequirePermissions('leave.read')
-  async getLeaveTypes(
-    @CurrentUser() tenantContext: TenantContext,
-  ) {
+  async getLeaveTypes(@CurrentUser() tenantContext: TenantContext) {
     const types = await this.service.getLeaveTypes(tenantContext);
     return { success: true, data: types };
   }

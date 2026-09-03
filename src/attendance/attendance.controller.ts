@@ -12,6 +12,7 @@ import { RequirePermissions } from '../common/decorators/require-permissions.dec
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { PermissionsGuard } from '../common/guards/permissions.guard';
 import { TenantContextDecorator, type TenantContext } from '../database/tenant-context';
+import { requireEmployeeId } from '../common/util/require-employee.util';
 
 @Controller('attendance')
 @UseGuards(JwtAuthGuard, PermissionsGuard)
@@ -24,7 +25,11 @@ export class AttendanceController {
     @TenantContextDecorator() tenantContext: TenantContext,
     @Body() dto: { notes?: string },
   ) {
-    const record = await this.service.clockIn(tenantContext, tenantContext.userId, dto);
+    const record = await this.service.clockIn(
+      tenantContext,
+      requireEmployeeId(tenantContext),
+      dto,
+    );
     return { success: true, data: record };
   }
 
@@ -34,7 +39,11 @@ export class AttendanceController {
     @TenantContextDecorator() tenantContext: TenantContext,
     @Body() dto: { notes?: string },
   ) {
-    const record = await this.service.clockOut(tenantContext, tenantContext.userId, dto);
+    const record = await this.service.clockOut(
+      tenantContext,
+      requireEmployeeId(tenantContext),
+      dto,
+    );
     return { success: true, data: record };
   }
 
@@ -56,7 +65,7 @@ export class AttendanceController {
   ) {
     const record = await this.service.getAttendanceByDate(
       tenantContext,
-      tenantContext.userId,
+      requireEmployeeId(tenantContext),
       date,
     );
     return { success: true, data: record };
@@ -71,7 +80,7 @@ export class AttendanceController {
   ) {
     const records = await this.service.getAttendanceByDateRange(
       tenantContext,
-      tenantContext.userId,
+      requireEmployeeId(tenantContext),
       startDate,
       endDate,
     );
@@ -86,7 +95,7 @@ export class AttendanceController {
   ) {
     const summary = await this.service.getAttendanceSummary(
       tenantContext,
-      tenantContext.userId,
+      requireEmployeeId(tenantContext),
       month,
     );
     return { success: true, data: summary };

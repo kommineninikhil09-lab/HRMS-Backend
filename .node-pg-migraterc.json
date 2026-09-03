@@ -1,6 +1,5 @@
 {
   "dir": "migrations",
-  "migrationsDir": "migrations",
   "schema": "public",
   "autoRun": false,
   "singleTransaction": false,

@@ -18,6 +18,11 @@ export const PERMISSIONS = {
   ORGANIZATION_READ: 'organization.read',
   ORGANIZATION_UPDATE: 'organization.update',
 
+  // Organization structure (business units, locations, departments, teams,
+  // grades, designations, cost centers)
+  ORG_STRUCTURE_READ: 'organization_structure.read',
+  ORG_STRUCTURE_WRITE: 'organization_structure.write',
+
   // Employees
   EMPLOYEE_READ: 'employee.read',
   EMPLOYEE_CREATE: 'employee.create',
@@ -41,6 +46,10 @@ export const PERMISSIONS = {
   // ESS (Employee Self-Service)
   ESS_READ: 'ess.read',
   ESS_UPDATE: 'ess.update',
+
+  // Holidays
+  HOLIDAY_READ: 'holiday.read',
+  HOLIDAY_WRITE: 'holiday.write',
 
   // Audit
   AUDIT_READ: 'audit.read',

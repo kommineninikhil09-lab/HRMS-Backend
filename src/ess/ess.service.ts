@@ -3,6 +3,7 @@ import { EmployeesRepository } from '../employees/employees.repository';
 import { TenantContext } from '../database/tenant-context';
 import { AuditService } from '../audit/audit.service';
 import { TransactionService } from '../database/transaction.service';
+import { toIsoDate } from '../common/util/date.util';
 
 export interface UpdateProfileDTO {
   personal_email?: string;
@@ -11,6 +12,12 @@ export interface UpdateProfileDTO {
   gender?: string;
 }
 
+/**
+ * ESS payload shape. Fields are snake_case to stay consistent with the other
+ * employee-facing domains (leave, attendance, holidays); the camelCase repos
+ * (users/roles/organizations) are a separate, older convention. Dates are ISO
+ * `YYYY-MM-DD` strings.
+ */
 export interface EmployeeESS {
   id: string;
   employee_code: string;
@@ -52,12 +59,12 @@ export class ESSService {
       work_email: employee.work_email,
       personal_email: employee.personal_email,
       phone: employee.phone,
-      dob: employee.dob,
+      dob: toIsoDate(employee.dob),
       gender: employee.gender,
       department_id: employee.department_id,
       designation_id: employee.designation_id,
       location_id: employee.location_id,
-      date_of_joining: employee.date_of_joining?.toString(),
+      date_of_joining: toIsoDate(employee.date_of_joining),
       status: employee.status,
       manager_id: employee.manager_id,
     };

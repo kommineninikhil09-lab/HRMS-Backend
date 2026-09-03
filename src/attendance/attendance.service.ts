@@ -34,9 +34,7 @@ export class AttendanceService {
     employeeId: string,
     dto: ClockInDTO,
   ): Promise<AttendanceRecord> {
-    console.log(`[clockIn] Looking up employee with userId: ${employeeId}, orgId: ${tenantContext.organizationId}`);
-    const employee = await this.employeesRepository.findByUserId(tenantContext, employeeId);
-    console.log(`[clockIn] Employee lookup result:`, employee);
+    const employee = await this.employeesRepository.findById(tenantContext, employeeId);
     if (!employee) {
       throw new NotFoundException('Employee not found');
     }
@@ -95,7 +93,7 @@ export class AttendanceService {
     employeeId: string,
     dto: ClockOutDTO,
   ): Promise<AttendanceRecord> {
-    const employee = await this.employeesRepository.findByUserId(tenantContext, employeeId);
+    const employee = await this.employeesRepository.findById(tenantContext, employeeId);
     if (!employee) {
       throw new NotFoundException('Employee not found');
     }

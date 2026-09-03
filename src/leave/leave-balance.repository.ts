@@ -8,7 +8,7 @@ export interface LeaveBalance {
   organization_id: string;
   employee_id: string;
   leave_type_id: string;
-  financial_year: number;
+  financial_year: string;
   opening_balance: number;
   allocated: number;
   used: number;
@@ -17,6 +17,20 @@ export interface LeaveBalance {
   lapsed: number;
   created_at: string;
   updated_at: string;
+}
+
+/** NUMERIC columns arrive from node-pg as strings; coerce to numbers. */
+function toModel(row: any): LeaveBalance {
+  if (!row) return row;
+  return {
+    ...row,
+    opening_balance: Number(row.opening_balance),
+    allocated: Number(row.allocated),
+    used: Number(row.used),
+    pending: Number(row.pending),
+    carry_forward: Number(row.carry_forward),
+    lapsed: Number(row.lapsed),
+  };
 }
 
 @Injectable()
@@ -44,14 +58,14 @@ export class LeaveBalanceRepository extends BaseRepository {
       data.carry_forward || 0,
       data.lapsed || 0,
     ]);
-    return result.rows[0];
+    return toModel(result.rows[0]);
   }
 
   async findByEmployeeAndType(
     tenantContext: TenantContext,
     employeeId: string,
     leaveTypeId: string,
-    financialYear: number,
+    financialYear: string,
     executor?: Pool | PoolClient,
   ): Promise<LeaveBalance | null> {
     const exe = executor || this.pool;
@@ -65,13 +79,13 @@ export class LeaveBalanceRepository extends BaseRepository {
       leaveTypeId,
       financialYear,
     ]);
-    return result.rows[0] || null;
+    return result.rows[0] ? toModel(result.rows[0]) : null;
   }
 
   async findByEmployee(
     tenantContext: TenantContext,
     employeeId: string,
-    financialYear: number,
+    financialYear: string,
     executor?: Pool | PoolClient,
   ): Promise<LeaveBalance[]> {
     const exe = executor || this.pool;
@@ -85,7 +99,7 @@ export class LeaveBalanceRepository extends BaseRepository {
       employeeId,
       financialYear,
     ]);
-    return result.rows;
+    return result.rows.map(toModel);
   }
 
   async updateBalance(
@@ -114,14 +128,14 @@ export class LeaveBalanceRepository extends BaseRepository {
       RETURNING *
     `;
     const result = await exe.query(query, values);
-    return result.rows[0];
+    return toModel(result.rows[0]);
   }
 
   async getAvailableBalance(
     tenantContext: TenantContext,
     employeeId: string,
     leaveTypeId: string,
-    financialYear: number,
+    financialYear: string,
     executor?: Pool | PoolClient,
   ): Promise<number> {
     const balance = await this.findByEmployeeAndType(

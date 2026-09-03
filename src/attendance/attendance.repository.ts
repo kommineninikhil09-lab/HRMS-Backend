@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { BaseRepository } from '../database/base.repository';
 import { TenantContext } from '../database/tenant-context';
+import { toIsoDate } from '../common/util/date.util';
 import { Pool, PoolClient } from 'pg';
 
 export interface AttendanceRecord {
@@ -15,6 +16,12 @@ export interface AttendanceRecord {
   marked_by?: string;
   created_at: string;
   updated_at: string;
+}
+
+/** `attendance_date` is a DATE column → normalise to `YYYY-MM-DD`. */
+function toModel(row: any): AttendanceRecord {
+  if (!row) return row;
+  return { ...row, attendance_date: toIsoDate(row.attendance_date) };
 }
 
 @Injectable()
@@ -40,7 +47,7 @@ export class AttendanceRepository extends BaseRepository {
       data.notes || null,
       data.marked_by || null,
     ]);
-    return result.rows[0];
+    return toModel(result.rows[0]);
   }
 
   async findByDate(
@@ -55,7 +62,7 @@ export class AttendanceRepository extends BaseRepository {
       WHERE organization_id = $1 AND employee_id = $2 AND attendance_date = $3
     `;
     const result = await exe.query(query, [tenantContext.organizationId, employeeId, date]);
-    return result.rows[0] || null;
+    return result.rows[0] ? toModel(result.rows[0]) : null;
   }
 
   async findByDateRange(
@@ -77,7 +84,7 @@ export class AttendanceRepository extends BaseRepository {
       startDate,
       endDate,
     ]);
-    return result.rows;
+    return result.rows.map(toModel);
   }
 
   async update(
@@ -105,7 +112,7 @@ export class AttendanceRepository extends BaseRepository {
       RETURNING *
     `;
     const result = await exe.query(query, values);
-    return result.rows[0];
+    return toModel(result.rows[0]);
   }
 
   async findById(
@@ -116,7 +123,7 @@ export class AttendanceRepository extends BaseRepository {
     const exe = executor || this.pool;
     const query = `SELECT * FROM attendance WHERE organization_id = $1 AND id = $2`;
     const result = await exe.query(query, [tenantContext.organizationId, id]);
-    return result.rows[0] || null;
+    return result.rows[0] ? toModel(result.rows[0]) : null;
   }
 
   async getEmployeeAttendanceSummary(
@@ -135,6 +142,6 @@ export class AttendanceRepository extends BaseRepository {
       GROUP BY status
     `;
     const result = await exe.query(query, [tenantContext.organizationId, employeeId, month]);
-    return result.rows;
+    return result.rows.map((r: any) => ({ status: r.status, count: Number(r.count) }));
   }
 }

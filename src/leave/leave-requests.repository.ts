@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { BaseRepository } from '../database/base.repository';
 import { TenantContext } from '../database/tenant-context';
+import { toIsoDate } from '../common/util/date.util';
 import { Pool, PoolClient } from 'pg';
 
 export interface LeaveRequest {
@@ -18,6 +19,17 @@ export interface LeaveRequest {
   rejection_reason?: string;
   created_at: string;
   updated_at: string;
+}
+
+/** DATE columns → `YYYY-MM-DD`; NUMERIC `duration_days` → number. */
+function toModel(row: any): LeaveRequest {
+  if (!row) return row;
+  return {
+    ...row,
+    start_date: toIsoDate(row.start_date),
+    end_date: toIsoDate(row.end_date),
+    duration_days: Number(row.duration_days),
+  };
 }
 
 @Injectable()
@@ -44,7 +56,7 @@ export class LeaveRequestsRepository extends BaseRepository {
       data.status || 'draft',
       data.approver_id || null,
     ]);
-    return result.rows[0];
+    return toModel(result.rows[0]);
   }
 
   async findById(
@@ -55,7 +67,7 @@ export class LeaveRequestsRepository extends BaseRepository {
     const exe = executor || this.pool;
     const query = `SELECT * FROM leave_requests WHERE organization_id = $1 AND id = $2`;
     const result = await exe.query(query, [tenantContext.organizationId, id]);
-    return result.rows[0] || null;
+    return result.rows[0] ? toModel(result.rows[0]) : null;
   }
 
   async findByEmployee(
@@ -85,7 +97,7 @@ export class LeaveRequestsRepository extends BaseRepository {
 
     query += ` ORDER BY start_date DESC`;
     const result = await exe.query(query, params);
-    return result.rows;
+    return result.rows.map(toModel);
   }
 
   async findPendingApprovals(
@@ -100,7 +112,7 @@ export class LeaveRequestsRepository extends BaseRepository {
       ORDER BY start_date DESC
     `;
     const result = await exe.query(query, [tenantContext.organizationId, approverId]);
-    return result.rows;
+    return result.rows.map(toModel);
   }
 
   async findByDateRange(
@@ -124,7 +136,7 @@ export class LeaveRequestsRepository extends BaseRepository {
       startDate,
       endDate,
     ]);
-    return result.rows;
+    return result.rows.map(toModel);
   }
 
   async update(
@@ -152,6 +164,6 @@ export class LeaveRequestsRepository extends BaseRepository {
       RETURNING *
     `;
     const result = await exe.query(query, values);
-    return result.rows[0];
+    return toModel(result.rows[0]);
   }
 }

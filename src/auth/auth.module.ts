@@ -9,6 +9,7 @@ import { JwtRefreshStrategy } from './strategies/jwt-refresh.strategy';
 import { LocalAuthProvider } from './providers/local-auth.provider';
 import { EntraAuthProvider } from './providers/entra-auth.provider';
 import { RefreshTokensRepository } from './refresh-tokens.repository';
+import { LoginThrottleGuard } from './guards/login-throttle.guard';
 import { UsersModule } from '../users/users.module';
 
 @Module({
@@ -33,6 +34,7 @@ import { UsersModule } from '../users/users.module';
     LocalAuthProvider,
     EntraAuthProvider,
     RefreshTokensRepository,
+    LoginThrottleGuard,
   ],
   exports: [AuthService, LocalAuthProvider, EntraAuthProvider],
 })
