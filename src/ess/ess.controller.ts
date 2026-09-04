@@ -1,19 +1,20 @@
-import { Controller, Get, Put, Body, UseGuards } from '@nestjs/common';
+import { Controller, Get, Put, Body } from '@nestjs/common';
 import { ESSService } from './ess.service';
-import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { RequirePermissions } from '../common/decorators/require-permissions.decorator';
-import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
-import { PermissionsGuard } from '../common/guards/permissions.guard';
-import type { TenantContext } from '../database/tenant-context';
+import { TenantContextDecorator, type TenantContext } from '../database/tenant-context';
 
+// No class-level @UseGuards(JwtAuthGuard, PermissionsGuard) — both already
+// run globally. Same redundant-registration bug fixed in employees/
+// attendance/leave controllers. Every route here is self-derived
+// (tenantContext.userId) with no employee-targeted path, so no
+// @ScopeParam/@RequireScope is needed — there's nothing to scope-check.
 @Controller('ess')
-@UseGuards(JwtAuthGuard, PermissionsGuard)
 export class ESSController {
   constructor(private readonly service: ESSService) {}
 
   @Get('dashboard')
   @RequirePermissions('ess.read')
-  async getDashboard(@CurrentUser() tenantContext: TenantContext) {
+  async getDashboard(@TenantContextDecorator() tenantContext: TenantContext) {
     const dashboard = await this.service.getEmployeeDashboard(
       tenantContext,
       tenantContext.userId,
@@ -23,7 +24,7 @@ export class ESSController {
 
   @Get('profile')
   @RequirePermissions('ess.read')
-  async getProfile(@CurrentUser() tenantContext: TenantContext) {
+  async getProfile(@TenantContextDecorator() tenantContext: TenantContext) {
     const profile = await this.service.getEmployeeProfile(
       tenantContext,
       tenantContext.userId,
@@ -34,7 +35,7 @@ export class ESSController {
   @Put('profile')
   @RequirePermissions('ess.update')
   async updateProfile(
-    @CurrentUser() tenantContext: TenantContext,
+    @TenantContextDecorator() tenantContext: TenantContext,
     @Body() dto: any,
   ) {
     const profile = await this.service.updateProfile(
@@ -47,7 +48,7 @@ export class ESSController {
 
   @Get('documents')
   @RequirePermissions('ess.read')
-  async getDocuments(@CurrentUser() tenantContext: TenantContext) {
+  async getDocuments(@TenantContextDecorator() tenantContext: TenantContext) {
     const documents = await this.service.getEmployeeDocuments(
       tenantContext,
       tenantContext.userId,

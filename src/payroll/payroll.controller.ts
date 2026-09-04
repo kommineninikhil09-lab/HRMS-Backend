@@ -5,21 +5,27 @@ import {
   Put,
   Body,
   Param,
-  UseGuards,
   Query,
 } from '@nestjs/common';
 import { PayrollService } from './payroll.service';
 import { RequirePermissions } from '../common/decorators/require-permissions.decorator';
-import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
-import { PermissionsGuard } from '../common/guards/permissions.guard';
+import { ScopeParam } from '../common/authorization/scope-param.decorator';
+import { RequireScope } from '../common/authorization/require-scope.decorator';
+import { SalarySlipResolver } from './salary-slip.resolver';
 import { TenantContextDecorator, type TenantContext } from '../database/tenant-context';
 
+// No class-level @UseGuards(JwtAuthGuard, PermissionsGuard) — both already
+// run globally. Same redundant-registration bug fixed in employees/
+// attendance/leave controllers: it silently wipes out scopedEmployeeIds
+// ScopeGuard attaches to tenantContext, which the pending/approved list
+// routes below now depend on.
 @Controller('payroll')
-@UseGuards(JwtAuthGuard, PermissionsGuard)
 export class PayrollController {
   constructor(private readonly payrollService: PayrollService) {}
 
-  // Salary Structures
+  // Salary Structures/Components are org-level payroll configuration
+  // (templates, not employee data) — no employee target, so no scope check,
+  // same as leave.types/attendance's non-employee routes.
   @Post('structures')
   @RequirePermissions('payroll.write')
   async createSalaryStructure(
@@ -96,9 +102,13 @@ export class PayrollController {
     return { success: true, data: component };
   }
 
-  // Salary Slips
+  // Salary Slips — each slip belongs to one employee (an IDOR previously:
+  // any payroll.read holder could view any employee's slip, including its
+  // gross/net amounts, by guessing the id), so slip-id routes resolve to
+  // that employee via SalarySlipResolver.
   @Get('slips/:id')
   @RequirePermissions('payroll.read')
+  @RequireScope({ resolver: SalarySlipResolver, param: 'id' })
   async getSalarySlip(
     @TenantContextDecorator() tenantContext: TenantContext,
     @Param('id') id: string,
@@ -109,6 +119,7 @@ export class PayrollController {
 
   @Get('employee/:employeeId/slips')
   @RequirePermissions('payroll.read')
+  @ScopeParam('employeeId')
   async getEmployeeSalarySlips(
     @TenantContextDecorator() tenantContext: TenantContext,
     @Param('employeeId') employeeId: string,
@@ -119,6 +130,7 @@ export class PayrollController {
 
   @Put('slips/:id/approve')
   @RequirePermissions('payroll.approve')
+  @RequireScope({ resolver: SalarySlipResolver, param: 'id' })
   async approveSalarySlip(
     @TenantContextDecorator() tenantContext: TenantContext,
     @Param('id') id: string,
@@ -129,6 +141,7 @@ export class PayrollController {
 
   @Put('slips/:id/mark-paid')
   @RequirePermissions('payroll.approve')
+  @RequireScope({ resolver: SalarySlipResolver, param: 'id' })
   async markSalarySlipAsPaid(
     @TenantContextDecorator() tenantContext: TenantContext,
     @Param('id') id: string,
@@ -137,6 +150,10 @@ export class PayrollController {
     return { success: true, data: slip };
   }
 
+  // List routes (no @ScopeParam/@RequireScope) — ScopeGuard attaches
+  // tenantContext.scopedEmployeeIds, and the repository now filters on it
+  // (see salary-slip.repository.ts findByStatus), so an HR Manager only
+  // sees their team's pending/approved slips instead of the whole org's.
   @Get('slips/pending/approvals')
   @RequirePermissions('payroll.approve')
   async getPendingApprovals(@TenantContextDecorator() tenantContext: TenantContext) {
@@ -154,6 +171,7 @@ export class PayrollController {
   // Salary Assignments
   @Post('assignments')
   @RequirePermissions('payroll.write')
+  @ScopeParam('employee_id')
   async assignStructureToEmployee(
     @TenantContextDecorator() tenantContext: TenantContext,
     @Body() dto: any,
@@ -169,6 +187,7 @@ export class PayrollController {
 
   @Get('assignments/employee/:employeeId')
   @RequirePermissions('payroll.read')
+  @ScopeParam('employeeId')
   async getEmployeeSalaryAssignment(
     @TenantContextDecorator() tenantContext: TenantContext,
     @Param('employeeId') employeeId: string,
@@ -182,6 +201,7 @@ export class PayrollController {
 
   @Get('assignments/employee/:employeeId/history')
   @RequirePermissions('payroll.read')
+  @ScopeParam('employeeId')
   async getEmployeeAssignmentHistory(
     @TenantContextDecorator() tenantContext: TenantContext,
     @Param('employeeId') employeeId: string,
@@ -196,6 +216,7 @@ export class PayrollController {
   // Salary Slip Generation
   @Post('slips/generate')
   @RequirePermissions('payroll.process')
+  @ScopeParam('employee_id')
   async generateSalarySlip(
     @TenantContextDecorator() tenantContext: TenantContext,
     @Body() dto: any,
@@ -211,6 +232,7 @@ export class PayrollController {
 
   @Get('slips/:id/breakdown')
   @RequirePermissions('payroll.read')
+  @RequireScope({ resolver: SalarySlipResolver, param: 'id' })
   async getSlipWithBreakdown(
     @TenantContextDecorator() tenantContext: TenantContext,
     @Param('id') id: string,

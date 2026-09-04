@@ -59,29 +59,37 @@ export class PerformanceAppraisalRepository extends BaseRepository {
   async findByCycle(
     tenantContext: TenantContext,
     cycleId: string,
+    scopedEmployeeIds?: 'ALL' | string[],
     executor?: Pool | PoolClient,
   ) {
-    const sql = `
-      SELECT * FROM performance_appraisals
-      WHERE organization_id = $1 AND cycle_id = $2
-      ORDER BY created_at DESC;
-    `;
+    const params: any[] = [tenantContext.organizationId, cycleId];
+    let sql = `SELECT * FROM performance_appraisals WHERE organization_id = $1 AND cycle_id = $2`;
 
-    return this.query<any>(sql, [tenantContext.organizationId, cycleId], executor);
+    if (scopedEmployeeIds && scopedEmployeeIds !== 'ALL') {
+      params.push(scopedEmployeeIds);
+      sql += ` AND employee_id = ANY($${params.length})`;
+    }
+
+    sql += ` ORDER BY created_at DESC;`;
+    return this.query<any>(sql, params, executor);
   }
 
   async findByStatus(
     tenantContext: TenantContext,
     status: string,
+    scopedEmployeeIds?: 'ALL' | string[],
     executor?: Pool | PoolClient,
   ) {
-    const sql = `
-      SELECT * FROM performance_appraisals
-      WHERE organization_id = $1 AND status = $2
-      ORDER BY created_at DESC;
-    `;
+    const params: any[] = [tenantContext.organizationId, status];
+    let sql = `SELECT * FROM performance_appraisals WHERE organization_id = $1 AND status = $2`;
 
-    return this.query<any>(sql, [tenantContext.organizationId, status], executor);
+    if (scopedEmployeeIds && scopedEmployeeIds !== 'ALL') {
+      params.push(scopedEmployeeIds);
+      sql += ` AND employee_id = ANY($${params.length})`;
+    }
+
+    sql += ` ORDER BY created_at DESC;`;
+    return this.query<any>(sql, params, executor);
   }
 
   async findByEmployee(

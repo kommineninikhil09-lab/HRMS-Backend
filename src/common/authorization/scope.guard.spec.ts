@@ -51,7 +51,7 @@ describe('ScopeGuard', () => {
       getScopedEmployeeIds: jest.fn(),
     } as any;
     mockModuleRef = {
-      resolve: jest.fn().mockResolvedValue(mockScopeService),
+      resolve: jest.fn().mockImplementation((token: any) => Promise.resolve(token === ScopeService ? mockScopeService : undefined)),
       get: jest.fn(),
     };
 
@@ -79,7 +79,7 @@ describe('ScopeGuard', () => {
 
   it('resolves ScopeService lazily via ModuleRef only once it is actually needed', async () => {
     makeContext({ permissions: undefined }); // a route that never needs ScopeService
-    expect(mockModuleRef.get).not.toHaveBeenCalled();
+    expect(mockModuleRef.resolve).not.toHaveBeenCalled();
   });
 
   describe('@ScopeParam routes', () => {
@@ -123,9 +123,12 @@ describe('ScopeGuard', () => {
   describe('@RequireScope routes', () => {
     it('resolves the resource to an employee id via the resolver, then checks scope', async () => {
       const mockResolver = { resolveEmployeeId: jest.fn().mockResolvedValue('emp-owner') };
-      mockModuleRef.get.mockImplementation((token: any) => (token === ScopeService ? mockScopeService : mockResolver));
+      const resolverType = class {} as any;
+      mockModuleRef.resolve.mockImplementation((token: any) =>
+        Promise.resolve(token === ScopeService ? mockScopeService : token === resolverType ? mockResolver : undefined),
+      );
       const request = { tenantContext, params: { slipId: 'slip-1' }, body: {}, query: {} };
-      const meta: RequireScopeMeta = { resolver: class {} as any, param: 'slipId' };
+      const meta: RequireScopeMeta = { resolver: resolverType, param: 'slipId' };
       const ctx = makeContext({ request, permissions: ['payroll.read'], requireScope: meta });
 
       await expect(guard.canActivate(ctx)).resolves.toBe(true);
@@ -135,9 +138,12 @@ describe('ScopeGuard', () => {
 
     it('throws 404 (not 403) when the resolver reports the resource does not exist', async () => {
       const mockResolver = { resolveEmployeeId: jest.fn().mockResolvedValue(null) };
-      mockModuleRef.get.mockImplementation((token: any) => (token === ScopeService ? mockScopeService : mockResolver));
+      const resolverType = class {} as any;
+      mockModuleRef.resolve.mockImplementation((token: any) =>
+        Promise.resolve(token === ScopeService ? mockScopeService : token === resolverType ? mockResolver : undefined),
+      );
       const request = { tenantContext, params: { slipId: 'unknown-slip' }, body: {}, query: {} };
-      const meta: RequireScopeMeta = { resolver: class {} as any, param: 'slipId' };
+      const meta: RequireScopeMeta = { resolver: resolverType, param: 'slipId' };
       const ctx = makeContext({ request, permissions: ['payroll.read'], requireScope: meta });
 
       await expect(guard.canActivate(ctx)).rejects.toThrow(NotFoundException);

@@ -9,6 +9,8 @@ import { PerformanceAppraisalRepository } from './repositories/performance-appra
 import { AppraisalRatingRepository } from './repositories/appraisal-rating.repository';
 import { CompetencyRepository } from './repositories/competency.repository';
 import { PerformanceGoalRepository } from './repositories/performance-goal.repository';
+import { PerformanceAppraisalResolver } from './performance-appraisal.resolver';
+import { PerformanceGoalResolver } from './performance-goal.resolver';
 
 // Was an empty `@Module({})` — same pre-existing bug as AttendanceModule
 // (see attendance.module.ts): PerformanceController/Service/Repositories
@@ -25,6 +27,8 @@ import { PerformanceGoalRepository } from './repositories/performance-goal.repos
     AppraisalRatingRepository,
     CompetencyRepository,
     PerformanceGoalRepository,
+    PerformanceAppraisalResolver,
+    PerformanceGoalResolver,
   ],
   exports: [PerformanceService],
 })

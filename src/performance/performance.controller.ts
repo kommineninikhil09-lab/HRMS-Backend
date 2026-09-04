@@ -5,21 +5,26 @@ import {
   Put,
   Body,
   Param,
-  UseGuards,
   Query,
 } from '@nestjs/common';
 import { PerformanceService } from './performance.service';
 import { RequirePermissions } from '../common/decorators/require-permissions.decorator';
-import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
-import { PermissionsGuard } from '../common/guards/permissions.guard';
+import { ScopeParam } from '../common/authorization/scope-param.decorator';
+import { RequireScope } from '../common/authorization/require-scope.decorator';
+import { PerformanceAppraisalResolver } from './performance-appraisal.resolver';
+import { PerformanceGoalResolver } from './performance-goal.resolver';
 import { TenantContextDecorator, type TenantContext } from '../database/tenant-context';
 
+// No class-level @UseGuards(JwtAuthGuard, PermissionsGuard) — both already
+// run globally. Same redundant-registration bug fixed in employees/
+// attendance/leave/payroll controllers.
 @Controller('performance')
-@UseGuards(JwtAuthGuard, PermissionsGuard)
 export class PerformanceController {
   constructor(private readonly performanceService: PerformanceService) {}
 
-  // Performance Cycles
+  // Performance Cycles/Templates/Competencies are org-level configuration,
+  // not employee data (no employee target) — permission-gated only, same as
+  // payroll's salary structures/components.
   @Post('cycles')
   @RequirePermissions('performance.cycles')
   async createCycle(
@@ -97,9 +102,12 @@ export class PerformanceController {
     return { success: true, data: template };
   }
 
-  // Performance Appraisals
+  // Performance Appraisals — each appraisal belongs to one employee. Was a
+  // confirmed IDOR: any performance.read/rate holder could view, rate,
+  // submit, review, or finalize any employee's appraisal by guessing the id.
   @Post('appraisals')
   @RequirePermissions('performance.write')
+  @ScopeParam('employee_id')
   async createAppraisal(
     @TenantContextDecorator() tenantContext: TenantContext,
     @Body() dto: any,
@@ -108,6 +116,9 @@ export class PerformanceController {
     return { success: true, data: appraisal };
   }
 
+  // List route (no @ScopeParam/@RequireScope) — ScopeGuard attaches
+  // tenantContext.scopedEmployeeIds; the service applies it to every filter
+  // branch (cycle_id/status/employee_id), see performance.service.ts.
   @Get('appraisals')
   @RequirePermissions('performance.read')
   async getAppraisals(
@@ -126,6 +137,7 @@ export class PerformanceController {
 
   @Get('appraisals/:id')
   @RequirePermissions('performance.read')
+  @RequireScope({ resolver: PerformanceAppraisalResolver, param: 'id' })
   async getAppraisal(
     @TenantContextDecorator() tenantContext: TenantContext,
     @Param('id') id: string,
@@ -137,6 +149,7 @@ export class PerformanceController {
   // Rating Submission
   @Post('appraisals/:id/ratings')
   @RequirePermissions('performance.rate')
+  @RequireScope({ resolver: PerformanceAppraisalResolver, param: 'id' })
   async submitRating(
     @TenantContextDecorator() tenantContext: TenantContext,
     @Param('id') appraisalId: string,
@@ -149,6 +162,7 @@ export class PerformanceController {
   // Appraisal Workflow
   @Put('appraisals/:id/submit')
   @RequirePermissions('performance.write')
+  @RequireScope({ resolver: PerformanceAppraisalResolver, param: 'id' })
   async submitAppraisal(
     @TenantContextDecorator() tenantContext: TenantContext,
     @Param('id') id: string,
@@ -159,6 +173,7 @@ export class PerformanceController {
 
   @Put('appraisals/:id/review')
   @RequirePermissions('performance.review')
+  @RequireScope({ resolver: PerformanceAppraisalResolver, param: 'id' })
   async reviewAppraisal(
     @TenantContextDecorator() tenantContext: TenantContext,
     @Param('id') id: string,
@@ -170,6 +185,7 @@ export class PerformanceController {
 
   @Put('appraisals/:id/finalize')
   @RequirePermissions('performance.finalize')
+  @RequireScope({ resolver: PerformanceAppraisalResolver, param: 'id' })
   async finalizeAppraisal(
     @TenantContextDecorator() tenantContext: TenantContext,
     @Param('id') id: string,
@@ -181,6 +197,7 @@ export class PerformanceController {
   // Goals
   @Post('goals')
   @RequirePermissions('performance.goals.write')
+  @ScopeParam('employee_id')
   async createGoal(
     @TenantContextDecorator() tenantContext: TenantContext,
     @Body() dto: any,
@@ -191,6 +208,7 @@ export class PerformanceController {
 
   @Put('goals/:id')
   @RequirePermissions('performance.goals.write')
+  @RequireScope({ resolver: PerformanceGoalResolver, param: 'id' })
   async updateGoal(
     @TenantContextDecorator() tenantContext: TenantContext,
     @Param('id') id: string,
@@ -202,6 +220,7 @@ export class PerformanceController {
 
   @Get('employee/:employeeId/goals')
   @RequirePermissions('performance.goals.read')
+  @ScopeParam('employeeId')
   async getEmployeeGoals(
     @TenantContextDecorator() tenantContext: TenantContext,
     @Param('employeeId') employeeId: string,

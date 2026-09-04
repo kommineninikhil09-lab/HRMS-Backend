@@ -99,13 +99,19 @@ export class SalarySlipRepository extends BaseRepository {
   async findByStatus(
     tenantContext: TenantContext,
     status: string,
+    scopedEmployeeIds?: 'ALL' | string[],
     executor?: Pool | PoolClient,
   ): Promise<SalarySlip[]> {
-    const result = await this.query<SalarySlip>(
-      'SELECT * FROM salary_slips WHERE organization_id = $1 AND status = $2 ORDER BY month DESC',
-      [tenantContext.organizationId, status],
-      executor,
-    );
+    const params: any[] = [tenantContext.organizationId, status];
+    let sql = 'SELECT * FROM salary_slips WHERE organization_id = $1 AND status = $2';
+
+    if (scopedEmployeeIds && scopedEmployeeIds !== 'ALL') {
+      params.push(scopedEmployeeIds);
+      sql += ` AND employee_id = ANY($${params.length})`;
+    }
+
+    sql += ' ORDER BY month DESC';
+    const result = await this.query<SalarySlip>(sql, params, executor);
     return result.rows;
   }
 

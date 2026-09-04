@@ -59,6 +59,18 @@ export class LeaveService {
 
     const durationDays = this.calculateBusinessDays(startDate, endDate);
 
+    // leave_requests.approver_id is a FK to users(id), not employees(id)
+    // (confirmed against the schema) — but employee.manager_id is an
+    // employees.id (self-referencing FK within employees). Storing
+    // manager_id directly always violated the FK constraint for any
+    // employee with a manager assigned, so no leave request could ever be
+    // created for them; confirmed live. The manager's own user_id is what
+    // belongs here.
+    const manager = employee.manager_id
+      ? await this.employeesRepo.findById(tenantContext, employee.manager_id)
+      : null;
+    const approverUserId = manager?.user_id;
+
     return this.transactionService.runInTransaction(async (client) => {
       const currentYear = this.getCurrentFinancialYear();
       const availableBalance = await this.leaveBalanceRepo.getAvailableBalance(
@@ -85,7 +97,7 @@ export class LeaveService {
           duration_days: durationDays,
           reason: dto.reason,
           status: leaveType.requires_approval ? 'submitted' : 'approved',
-          approver_id: employee.manager_id,
+          approver_id: approverUserId,
         },
         client,
       );

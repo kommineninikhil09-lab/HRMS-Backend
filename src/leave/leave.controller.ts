@@ -6,29 +6,53 @@ import {
   Body,
   Param,
   Query,
-  UseGuards,
+  NotFoundException,
 } from '@nestjs/common';
 import { LeaveService } from './leave.service';
-import { CurrentUser } from '../common/decorators/current-user.decorator';
+import { EmployeesService } from '../employees/employees.service';
 import { RequirePermissions } from '../common/decorators/require-permissions.decorator';
-import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
-import { PermissionsGuard } from '../common/guards/permissions.guard';
-import type { TenantContext } from '../database/tenant-context';
+import { ScopeParam } from '../common/authorization/scope-param.decorator';
+import { RequireScope } from '../common/authorization/require-scope.decorator';
+import { LeaveRequestResolver } from './leave-request.resolver';
+import { TenantContextDecorator, type TenantContext } from '../database/tenant-context';
 
+// No class-level @UseGuards(JwtAuthGuard, PermissionsGuard) — both already
+// run globally. Same redundant-registration bug fixed in employees/
+// attendance controllers: it silently wipes out scopedEmployeeIds ScopeGuard
+// attaches to tenantContext. Removed here for the same reason.
 @Controller('leave')
-@UseGuards(JwtAuthGuard, PermissionsGuard)
 export class LeaveController {
-  constructor(private readonly service: LeaveService) {}
+  constructor(
+    private readonly service: LeaveService,
+    private readonly employeesService: EmployeesService,
+  ) {}
+
+  // tenantContext.userId is the JWT sub — a users.id, not an employees.id.
+  // LeaveService's shared methods (also used by the already-scope-checked
+  // employee-targeted routes below) take a real employees.id, so every
+  // self-service route resolves it here first. Previously these routes
+  // passed tenantContext.userId straight through as if it were an
+  // employees.id, so every self-service call — create/list/balance/approve/
+  // pending-approvals — failed with "Employee not found" (create) or
+  // silently matched nothing (approver_id comparisons); confirmed live.
+  private async resolveSelfEmployeeId(tenantContext: TenantContext): Promise<string> {
+    const employee = await this.employeesService.getByUserId(tenantContext, tenantContext.userId);
+    if (!employee) {
+      throw new NotFoundException('Employee record not found for current user');
+    }
+    return employee.id;
+  }
 
   @Post('requests')
   @RequirePermissions('leave.write')
   async createLeaveRequest(
-    @CurrentUser() tenantContext: TenantContext,
+    @TenantContextDecorator() tenantContext: TenantContext,
     @Body() dto: any,
   ) {
+    const employeeId = await this.resolveSelfEmployeeId(tenantContext);
     const request = await this.service.createLeaveRequest(
       tenantContext,
-      tenantContext.userId,
+      employeeId,
       dto,
     );
     return { success: true, data: request };
@@ -37,21 +61,28 @@ export class LeaveController {
   @Get('requests')
   @RequirePermissions('leave.read')
   async getLeaveRequests(
-    @CurrentUser() tenantContext: TenantContext,
+    @TenantContextDecorator() tenantContext: TenantContext,
     @Query('status') status?: string,
   ) {
+    const employeeId = await this.resolveSelfEmployeeId(tenantContext);
     const requests = await this.service.getEmployeeLeaveRequests(
       tenantContext,
-      tenantContext.userId,
+      employeeId,
       status,
     );
     return { success: true, data: requests };
   }
 
+  // Was @CurrentUser()-only with no scope check at all — any authenticated
+  // user holding leave.read could view any other employee's leave request by
+  // guessing/incrementing the id (a genuine IDOR). The target here is a leave
+  // request id, not an employee id, so it needs the resolver form rather than
+  // @ScopeParam.
   @Get('requests/:id')
   @RequirePermissions('leave.read')
+  @RequireScope({ resolver: LeaveRequestResolver, param: 'id' })
   async getLeaveRequest(
-    @CurrentUser() tenantContext: TenantContext,
+    @TenantContextDecorator() tenantContext: TenantContext,
     @Param('id') id: string,
   ) {
     const request = await this.service.getLeaveRequestById(tenantContext, id);
@@ -61,26 +92,36 @@ export class LeaveController {
   @Get('balance')
   @RequirePermissions('leave.read')
   async getLeaveBalance(
-    @CurrentUser() tenantContext: TenantContext,
+    @TenantContextDecorator() tenantContext: TenantContext,
   ) {
-    const balance = await this.service.getLeaveBalance(tenantContext, tenantContext.userId);
+    const employeeId = await this.resolveSelfEmployeeId(tenantContext);
+    const balance = await this.service.getLeaveBalance(tenantContext, employeeId);
     return { success: true, data: balance };
   }
 
   @Get('balance/employee/:employeeId')
   @RequirePermissions('leave.read')
+  @ScopeParam('employeeId')
   async getEmployeeLeaveBalance(
-    @CurrentUser() tenantContext: TenantContext,
+    @TenantContextDecorator() tenantContext: TenantContext,
     @Param('employeeId') employeeId: string,
   ) {
     const balance = await this.service.getLeaveBalance(tenantContext, employeeId);
     return { success: true, data: balance };
   }
 
+  // The service's own approver_id === approverId check (only the request's
+  // direct approver, set at creation time to the manager's *users.id* — see
+  // leave.service.ts createLeaveRequest — can approve it) is stricter than
+  // and independent of this scope check. approver_id is a users.id (FK to
+  // users, confirmed against the schema), so tenantContext.userId is passed
+  // as-is here — no employees.id resolution, unlike the employee_id-based
+  // routes above.
   @Put('requests/:id/approve')
   @RequirePermissions('leave.approve')
+  @RequireScope({ resolver: LeaveRequestResolver, param: 'id' })
   async approveLeaveRequest(
-    @CurrentUser() tenantContext: TenantContext,
+    @TenantContextDecorator() tenantContext: TenantContext,
     @Param('id') id: string,
     @Body() dto: any,
   ) {
@@ -93,10 +134,12 @@ export class LeaveController {
     return { success: true, data: request };
   }
 
+  // approver_id is a users.id (see approveLeaveRequest above) — no
+  // employees.id resolution needed here either.
   @Get('approvals/pending')
   @RequirePermissions('leave.approve')
   async getPendingApprovals(
-    @CurrentUser() tenantContext: TenantContext,
+    @TenantContextDecorator() tenantContext: TenantContext,
   ) {
     const requests = await this.service.getPendingApprovals(
       tenantContext,
@@ -107,8 +150,9 @@ export class LeaveController {
 
   @Get('employee/:employeeId/requests')
   @RequirePermissions('leave.read')
+  @ScopeParam('employeeId')
   async getEmployeeRequests(
-    @CurrentUser() tenantContext: TenantContext,
+    @TenantContextDecorator() tenantContext: TenantContext,
     @Param('employeeId') employeeId: string,
     @Query('status') status?: string,
   ) {
@@ -123,7 +167,7 @@ export class LeaveController {
   @Get('types')
   @RequirePermissions('leave.read')
   async getLeaveTypes(
-    @CurrentUser() tenantContext: TenantContext,
+    @TenantContextDecorator() tenantContext: TenantContext,
   ) {
     const types = await this.service.getLeaveTypes(tenantContext);
     return { success: true, data: types };

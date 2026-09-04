@@ -7,6 +7,7 @@ import { LeaveService } from './leave.service';
 import { LeaveTypesRepository } from './leave-types.repository';
 import { LeaveRequestsRepository } from './leave-requests.repository';
 import { LeaveBalanceRepository } from './leave-balance.repository';
+import { LeaveRequestResolver } from './leave-request.resolver';
 
 // Was an empty `@Module({})` — same pre-existing bug as AttendanceModule
 // (see attendance.module.ts): LeaveController/Service/Repositories all
@@ -16,7 +17,7 @@ import { LeaveBalanceRepository } from './leave-balance.repository';
 @Module({
   imports: [DatabaseModule, AuditModule, EmployeesModule],
   controllers: [LeaveController],
-  providers: [LeaveService, LeaveTypesRepository, LeaveRequestsRepository, LeaveBalanceRepository],
+  providers: [LeaveService, LeaveTypesRepository, LeaveRequestsRepository, LeaveBalanceRepository, LeaveRequestResolver],
   exports: [LeaveService],
 })
 export class LeaveModule {}

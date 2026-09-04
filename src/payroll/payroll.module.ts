@@ -9,6 +9,7 @@ import { SalarySlipRepository } from './repositories/salary-slip.repository';
 import { SalaryAssignmentRepository } from './repositories/salary-assignment.repository';
 import { StructureComponentRepository } from './repositories/structure-component.repository';
 import { SlipComponentRepository } from './repositories/slip-component.repository';
+import { SalarySlipResolver } from './salary-slip.resolver';
 
 // Was an empty `@Module({})` — same pre-existing bug as AttendanceModule
 // (see attendance.module.ts): PayrollController/Service/Repositories all
@@ -25,6 +26,7 @@ import { SlipComponentRepository } from './repositories/slip-component.repositor
     SalaryAssignmentRepository,
     StructureComponentRepository,
     SlipComponentRepository,
+    SalarySlipResolver,
   ],
   exports: [PayrollService],
 })

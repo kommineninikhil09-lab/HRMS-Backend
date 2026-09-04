@@ -5,8 +5,10 @@ import {
   Body,
   Param,
   Query,
+  NotFoundException,
 } from '@nestjs/common';
 import { AttendanceService } from './attendance.service';
+import { EmployeesService } from '../employees/employees.service';
 import { RequirePermissions } from '../common/decorators/require-permissions.decorator';
 import { ScopeParam } from '../common/authorization/scope-param.decorator';
 import { TenantContextDecorator, type TenantContext } from '../database/tenant-context';
@@ -20,7 +22,26 @@ import { TenantContextDecorator, type TenantContext } from '../database/tenant-c
 // scopedEmployeeIds, so the same bug can't resurface if one is added later.
 @Controller('attendance')
 export class AttendanceController {
-  constructor(private readonly service: AttendanceService) {}
+  constructor(
+    private readonly service: AttendanceService,
+    private readonly employeesService: EmployeesService,
+  ) {}
+
+  // tenantContext.userId is a users.id, not an employees.id.
+  // getAttendanceByDate/Range/Summary are shared with the already-scope-
+  // checked employee-targeted routes below, which pass a real employees.id —
+  // so unlike clockIn/clockOut (which resolve internally in the service),
+  // these self routes resolve here first. Previously they passed
+  // tenantContext.userId straight through, which silently matched no rows
+  // (200 with null/empty data, not an error) instead of the caller's own
+  // attendance; confirmed live.
+  private async resolveSelfEmployeeId(tenantContext: TenantContext): Promise<string> {
+    const employee = await this.employeesService.getByUserId(tenantContext, tenantContext.userId);
+    if (!employee) {
+      throw new NotFoundException('Employee record not found for current user');
+    }
+    return employee.id;
+  }
 
   @Post('clock-in')
   @RequirePermissions('attendance.write')
@@ -59,9 +80,10 @@ export class AttendanceController {
     @TenantContextDecorator() tenantContext: TenantContext,
     @Param('date') date: string,
   ) {
+    const employeeId = await this.resolveSelfEmployeeId(tenantContext);
     const record = await this.service.getAttendanceByDate(
       tenantContext,
-      tenantContext.userId,
+      employeeId,
       date,
     );
     return { success: true, data: record };
@@ -74,9 +96,10 @@ export class AttendanceController {
     @Query('startDate') startDate: string,
     @Query('endDate') endDate: string,
   ) {
+    const employeeId = await this.resolveSelfEmployeeId(tenantContext);
     const records = await this.service.getAttendanceByDateRange(
       tenantContext,
-      tenantContext.userId,
+      employeeId,
       startDate,
       endDate,
     );
@@ -89,9 +112,10 @@ export class AttendanceController {
     @TenantContextDecorator() tenantContext: TenantContext,
     @Query('month') month: string,
   ) {
+    const employeeId = await this.resolveSelfEmployeeId(tenantContext);
     const summary = await this.service.getAttendanceSummary(
       tenantContext,
-      tenantContext.userId,
+      employeeId,
       month,
     );
     return { success: true, data: summary };

@@ -37,8 +37,14 @@ export class ESSService {
     private readonly transactionService: TransactionService,
   ) {}
 
+  // `employeeId` here is actually the caller's tenantContext.userId (a
+  // users.id, set by the controller from the JWT) — every route on this
+  // controller is self-service only, so it's resolved to the real
+  // employees.id via findByUserId rather than findById. Was previously
+  // passed straight into findById (which expects an employees.id), so every
+  // ESS route 404'd "Employee not found" for every caller; confirmed live.
   async getEmployeeProfile(tenantContext: TenantContext, employeeId: string): Promise<EmployeeESS> {
-    const employee = await this.employeesRepository.findById(tenantContext, employeeId);
+    const employee = await this.employeesRepository.findByUserId(tenantContext, employeeId);
     if (!employee) {
       throw new NotFoundException('Employee not found');
     }
@@ -68,7 +74,7 @@ export class ESSService {
     employeeId: string,
     dto: UpdateProfileDTO,
   ): Promise<EmployeeESS> {
-    const employee = await this.employeesRepository.findById(tenantContext, employeeId);
+    const employee = await this.employeesRepository.findByUserId(tenantContext, employeeId);
     if (!employee) {
       throw new NotFoundException('Employee not found');
     }
@@ -82,7 +88,7 @@ export class ESSService {
 
       const updated = await this.employeesRepository.update(
         tenantContext,
-        employeeId,
+        employee.id,
         {
           personal_email: dto.personal_email || employee.personal_email,
           phone: dto.phone || employee.phone,
@@ -97,7 +103,7 @@ export class ESSService {
         {
           action: 'UPDATE',
           entity_type: 'Employee',
-          entity_id: employeeId,
+          entity_id: employee.id,
           old_value: oldValue,
           new_value: {
             personal_email: dto.personal_email,

@@ -1,4 +1,4 @@
-import { Injectable, CanActivate, ExecutionContext, NotFoundException } from '@nestjs/common';
+import { Injectable, CanActivate, ExecutionContext, NotFoundException, Type } from '@nestjs/common';
 import { Reflector, ModuleRef } from '@nestjs/core';
 import { Request } from 'express';
 import { PERMISSIONS_KEY } from '../decorators/require-permissions.decorator';
@@ -6,6 +6,7 @@ import { IS_PUBLIC_KEY } from '../decorators/public.decorator';
 import { SCOPE_PARAM_KEY } from './scope-param.decorator';
 import { REQUIRE_SCOPE_KEY, RequireScopeMeta } from './require-scope.decorator';
 import { ScopeService } from './scope.service';
+import { ResourceResolver } from './resource-resolver.interface';
 import { TenantContext } from '../../database/tenant-context';
 
 /**
@@ -59,6 +60,7 @@ import { TenantContext } from '../../database/tenant-context';
 export class ScopeGuard implements CanActivate {
   private readonly reflector = new Reflector();
   private scopeService: ScopeService | undefined;
+  private readonly resolverCache = new Map<Type<ResourceResolver>, ResourceResolver>();
 
   constructor(private readonly moduleRef: ModuleRef) {}
 
@@ -76,6 +78,22 @@ export class ScopeGuard implements CanActivate {
       this.scopeService = resolved;
     }
     return this.scopeService;
+  }
+
+  // Same `.resolve()`-not-`.get()` requirement as ScopeService above — a
+  // @RequireScope resolver is just as likely to have its own repository
+  // dependency come back with an undefined `pool` under `.get()`.
+  private async getResolver(resolverType: Type<ResourceResolver>): Promise<ResourceResolver> {
+    let resolver = this.resolverCache.get(resolverType);
+    if (!resolver) {
+      const resolved = await this.moduleRef.resolve(resolverType, undefined, { strict: false });
+      if (!resolved) {
+        throw new Error(`ScopeGuard: resolver ${resolverType.name} could not be resolved from the module graph`);
+      }
+      resolver = resolved;
+      this.resolverCache.set(resolverType, resolver);
+    }
+    return resolver;
   }
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -120,7 +138,7 @@ export class ScopeGuard implements CanActivate {
     }
 
     if (requireScope) {
-      const resolver = this.moduleRef.get(requireScope.resolver, { strict: false });
+      const resolver = await this.getResolver(requireScope.resolver);
       const resourceId = request.params?.[requireScope.param];
       if (!resourceId || Array.isArray(resourceId)) return false;
 

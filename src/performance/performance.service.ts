@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
 import { TenantContext } from '../database/tenant-context';
 import { TransactionService } from '../database/transaction.service';
 import { AuditService } from '../audit/audit.service';
@@ -163,13 +163,22 @@ export class PerformanceService {
   }
 
   async getAppraisals(tenantContext: TenantContext, filters?: any) {
+    const scopedIds = tenantContext.scopedEmployeeIds;
+
     if (filters?.cycle_id) {
-      return this.appraisalRepository.findByCycle(tenantContext, filters.cycle_id);
+      return this.appraisalRepository.findByCycle(tenantContext, filters.cycle_id, scopedIds);
     }
     if (filters?.status) {
-      return this.appraisalRepository.findByStatus(tenantContext, filters.status);
+      return this.appraisalRepository.findByStatus(tenantContext, filters.status, scopedIds);
     }
     if (filters?.employee_id) {
+      // employee_id is a caller-supplied query filter, not a URL param, so
+      // ScopeGuard's @ScopeParam can't gate it directly (it would also wrongly
+      // require employee_id on the cycle_id/status filter modes above, which
+      // don't take one) — check it against the resolved scope set here instead.
+      if (scopedIds && scopedIds !== 'ALL' && !scopedIds.includes(filters.employee_id)) {
+        throw new ForbiddenException('Employee is outside your permission scope');
+      }
       return this.appraisalRepository.findByEmployee(tenantContext, filters.employee_id);
     }
     return [];

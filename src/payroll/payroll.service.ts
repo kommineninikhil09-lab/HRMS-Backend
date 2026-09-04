@@ -211,11 +211,11 @@ export class PayrollService {
   }
 
   async getPendingApprovals(tenantContext: TenantContext) {
-    return this.salarySlipRepository.findByStatus(tenantContext, 'draft');
+    return this.salarySlipRepository.findByStatus(tenantContext, 'draft', tenantContext.scopedEmployeeIds);
   }
 
   async getApprovedSlips(tenantContext: TenantContext) {
-    return this.salarySlipRepository.findByStatus(tenantContext, 'approved');
+    return this.salarySlipRepository.findByStatus(tenantContext, 'approved', tenantContext.scopedEmployeeIds);
   }
 
   // Salary Assignment Operations
