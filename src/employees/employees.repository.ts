@@ -107,7 +107,11 @@ export class EmployeesRepository extends BaseRepository {
     return result.rows[0] as Employee | undefined;
   }
 
-  async findAll(tenantContext: TenantContext, filters?: { status?: string; department_id?: string }, executor?: Pool | PoolClient) {
+  async findAll(
+    tenantContext: TenantContext,
+    filters?: { status?: string; department_id?: string; scopedIds?: 'ALL' | string[] },
+    executor?: Pool | PoolClient,
+  ) {
     let query = `SELECT * FROM employees WHERE organization_id = $1`;
     const values: any[] = [tenantContext.organizationId];
     let paramIndex = 2;
@@ -120,6 +124,15 @@ export class EmployeesRepository extends BaseRepository {
     if (filters?.department_id) {
       query += ` AND department_id = $${paramIndex}`;
       values.push(filters.department_id);
+      paramIndex++;
+    }
+    // ScopeGuard resolves this from the caller's role scope (implementation.md
+    // §2.8) — 'ALL' for ORGANIZATION scope adds no filter, otherwise this is
+    // the exact set of employee ids the caller is allowed to see. Filtered in
+    // SQL, never fetched-then-filtered in application code.
+    if (filters?.scopedIds && filters.scopedIds !== 'ALL') {
+      query += ` AND id = ANY($${paramIndex})`;
+      values.push(filters.scopedIds);
       paramIndex++;
     }
 

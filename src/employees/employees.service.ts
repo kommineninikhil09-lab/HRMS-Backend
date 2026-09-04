@@ -93,7 +93,7 @@ export class EmployeesService {
   }
 
   async getAll(tenantContext: TenantContext, filters?: { status?: string; department_id?: string }) {
-    return this.repository.findAll(tenantContext, filters);
+    return this.repository.findAll(tenantContext, { ...filters, scopedIds: tenantContext.scopedEmployeeIds });
   }
 
   async update(tenantContext: TenantContext, id: string, dto: UpdateEmployeeDTO) {

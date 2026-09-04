@@ -78,6 +78,12 @@ import { CommunityModule } from './community/community.module';
       provide: APP_GUARD,
       useClass: PermissionsGuard,
     },
+    // ScopeGuard is NOT registered here — it's registered as an APP_GUARD
+    // from within AuthorizationModule itself (see that file's comment for
+    // why: it needs ScopeService, a same-module dependency there, and every
+    // way of wiring that cross-module from AppModule instead was verified
+    // broken against a live server). APP_GUARD is a global multi-token Nest
+    // collects from every module, so it's still active for every route.
     {
       provide: APP_FILTER,
       useClass: AllExceptionsFilter,
