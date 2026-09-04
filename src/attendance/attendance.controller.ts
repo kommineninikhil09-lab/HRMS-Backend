@@ -5,16 +5,20 @@ import {
   Body,
   Param,
   Query,
-  UseGuards,
 } from '@nestjs/common';
 import { AttendanceService } from './attendance.service';
 import { RequirePermissions } from '../common/decorators/require-permissions.decorator';
-import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
-import { PermissionsGuard } from '../common/guards/permissions.guard';
+import { ScopeParam } from '../common/authorization/scope-param.decorator';
 import { TenantContextDecorator, type TenantContext } from '../database/tenant-context';
 
+// No class-level @UseGuards(JwtAuthGuard, PermissionsGuard) — both already
+// run globally. That redundant registration is what silently broke list
+// filtering on the Employees module (see employees.controller.ts): running
+// JwtAuthGuard a second time unconditionally rebuilds tenantContext from the
+// JWT, discarding whatever ScopeGuard had just attached. Removed here
+// proactively, even though no route on this controller currently reads
+// scopedEmployeeIds, so the same bug can't resurface if one is added later.
 @Controller('attendance')
-@UseGuards(JwtAuthGuard, PermissionsGuard)
 export class AttendanceController {
   constructor(private readonly service: AttendanceService) {}
 
@@ -40,6 +44,7 @@ export class AttendanceController {
 
   @Post('mark')
   @RequirePermissions('attendance.manage')
+  @ScopeParam('employee_id')
   async markAttendance(
     @TenantContextDecorator() tenantContext: TenantContext,
     @Body() dto: any,
@@ -94,6 +99,7 @@ export class AttendanceController {
 
   @Get('employee/:employeeId/date/:date')
   @RequirePermissions('attendance.read')
+  @ScopeParam('employeeId')
   async getEmployeeByDate(
     @TenantContextDecorator() tenantContext: TenantContext,
     @Param('employeeId') employeeId: string,
@@ -105,6 +111,7 @@ export class AttendanceController {
 
   @Get('employee/:employeeId/range')
   @RequirePermissions('attendance.read')
+  @ScopeParam('employeeId')
   async getEmployeeByDateRange(
     @TenantContextDecorator() tenantContext: TenantContext,
     @Param('employeeId') employeeId: string,
