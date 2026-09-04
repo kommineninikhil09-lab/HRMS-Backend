@@ -164,4 +164,19 @@ export class EmployeesService {
       await this.repository.delete(tenantContext, id, client);
     });
   }
+
+  /** Resolve the employee record for the currently authenticated user. */
+  async getByUserId(tenantContext: TenantContext, userId: string) {
+    return this.repository.findByUserId(tenantContext, userId);
+  }
+
+  /** Direct reports of `managerEmployeeId` — no recursion. */
+  async getDirectReportIds(tenantContext: TenantContext, managerEmployeeId: string) {
+    return this.repository.findDirectReportIds(tenantContext, managerEmployeeId);
+  }
+
+  /** Full recursive subtree under `managerEmployeeId` (cycle- and depth-safe). */
+  async getSubtreeIds(tenantContext: TenantContext, managerEmployeeId: string) {
+    return this.repository.findSubtreeIds(tenantContext, managerEmployeeId);
+  }
 }

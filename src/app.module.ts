@@ -29,6 +29,7 @@ import { DesignationsModule } from './designations/designations.module';
 import { CostCentersModule } from './cost-centers/cost-centers.module';
 import { EmploymentHistoryModule } from './employment-history/employment-history.module';
 import { EmployeesModule } from './employees/employees.module';
+import { AuthorizationModule } from './common/authorization/authorization.module';
 import { AttendanceModule } from './attendance/attendance.module';
 import { LeaveModule } from './leave/leave.module';
 import { ESSModule } from './ess/ess.module';
@@ -59,6 +60,7 @@ import { CommunityModule } from './community/community.module';
     CostCentersModule,
     EmploymentHistoryModule,
     EmployeesModule,
+    AuthorizationModule,
     AttendanceModule,
     LeaveModule,
     ESSModule,

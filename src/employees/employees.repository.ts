@@ -202,4 +202,45 @@ export class EmployeesRepository extends BaseRepository {
     `;
     await (executor || this.pool).query(query, [id, tenantContext.organizationId]);
   }
+
+  /** Direct reports only — no recursion. Used for approval chains (e.g. leave approval) that should not skip levels. */
+  async findDirectReportIds(tenantContext: TenantContext, managerId: string, executor?: Pool | PoolClient) {
+    const query = `
+      SELECT id FROM employees
+      WHERE manager_id = $1 AND organization_id = $2
+    `;
+    const result = await (executor || this.pool).query(query, [managerId, tenantContext.organizationId]);
+    return result.rows.map((r) => r.id as string);
+  }
+
+  /**
+   * Full recursive subtree under a manager (TEAM scope's default definition).
+   *
+   * Cycle protection: a `manager_id` cycle is a real risk — nothing in the
+   * schema stops A reporting to B and B reporting to A. `UNION` (instead of
+   * `UNION ALL`) does NOT actually break this: it only dedupes exact
+   * `(id, depth)` tuples, and depth strictly increases every step, so the
+   * same employee re-appearing at a new depth is never a "duplicate" to
+   * `UNION` — verified empirically (a seeded A<->B cycle returned 20
+   * alternating duplicate rows before this fix, not a hang, only because the
+   * depth cap eventually cut it off). The actual fix is tracking the visited
+   * path explicitly and refusing to step onto an id already in it.
+   */
+  async findSubtreeIds(tenantContext: TenantContext, managerId: string, executor?: Pool | PoolClient) {
+    const query = `
+      WITH RECURSIVE subordinates AS (
+        SELECT id, ARRAY[id] AS path, 1 AS depth FROM employees
+        WHERE manager_id = $1 AND organization_id = $2
+        UNION ALL
+        SELECT e.id, s.path || e.id, s.depth + 1 FROM employees e
+        JOIN subordinates s ON e.manager_id = s.id
+        WHERE s.depth < 20
+          AND e.organization_id = $2
+          AND NOT e.id = ANY(s.path)
+      )
+      SELECT DISTINCT id FROM subordinates
+    `;
+    const result = await (executor || this.pool).query(query, [managerId, tenantContext.organizationId]);
+    return result.rows.map((r) => r.id as string);
+  }
 }
