@@ -1,11 +1,10 @@
 import { Controller, Post, Get, Put, Delete, Body, Param, Query, UseGuards } from '@nestjs/common';
 import { CommentsService } from '../services/comments.service';
 import { CreateCommentRequestDto, UpdateCommentRequestDto, CommentResponseDto, CommentListResponseDto } from '../dto';
-import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { RequirePermissions } from '../../common/decorators/require-permissions.decorator';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
-import type { TenantContext } from '../../database/tenant-context';
+import { TenantContextDecorator, type TenantContext } from '../../database/tenant-context';
 
 @Controller('community/comments')
 @UseGuards(JwtAuthGuard, PermissionsGuard)
@@ -14,7 +13,7 @@ export class CommentsController {
 
   @Post()
   @RequirePermissions('comment.create')
-  async createComment(@CurrentUser() tenantContext: TenantContext, @Body() dto: CreateCommentRequestDto): Promise<CommentResponseDto> {
+  async createComment(@TenantContextDecorator() tenantContext: TenantContext, @Body() dto: CreateCommentRequestDto): Promise<CommentResponseDto> {
     const comment = await this.commentsService.createComment(tenantContext, dto);
     return this.mapToResponse(comment);
   }
@@ -22,7 +21,7 @@ export class CommentsController {
   @Get()
   @RequirePermissions('comment.read')
   async listComments(
-    @CurrentUser() tenantContext: TenantContext,
+    @TenantContextDecorator() tenantContext: TenantContext,
     @Query('commentable_type') commentableType: string,
     @Query('commentable_id') commentableId: string,
     @Query('limit') limit?: string,
@@ -40,7 +39,7 @@ export class CommentsController {
 
   @Get(':id')
   @RequirePermissions('comment.read')
-  async getComment(@CurrentUser() tenantContext: TenantContext, @Param('id') id: string): Promise<CommentResponseDto> {
+  async getComment(@TenantContextDecorator() tenantContext: TenantContext, @Param('id') id: string): Promise<CommentResponseDto> {
     const comment = await this.commentsService.getComment(tenantContext, id);
     return this.mapToResponse(comment);
   }
@@ -48,7 +47,7 @@ export class CommentsController {
   @Put(':id')
   @RequirePermissions('comment.update')
   async updateComment(
-    @CurrentUser() tenantContext: TenantContext,
+    @TenantContextDecorator() tenantContext: TenantContext,
     @Param('id') id: string,
     @Body() dto: UpdateCommentRequestDto,
   ): Promise<CommentResponseDto> {
@@ -58,21 +57,21 @@ export class CommentsController {
 
   @Delete(':id')
   @RequirePermissions('comment.delete')
-  async deleteComment(@CurrentUser() tenantContext: TenantContext, @Param('id') id: string): Promise<{ success: boolean }> {
+  async deleteComment(@TenantContextDecorator() tenantContext: TenantContext, @Param('id') id: string): Promise<{ success: boolean }> {
     await this.commentsService.deleteComment(tenantContext, id);
     return { success: true };
   }
 
   @Post(':id/like')
   @RequirePermissions('like.create')
-  async addLike(@CurrentUser() tenantContext: TenantContext, @Param('id') id: string): Promise<{ likes_count: number }> {
+  async addLike(@TenantContextDecorator() tenantContext: TenantContext, @Param('id') id: string): Promise<{ likes_count: number }> {
     const count = await this.commentsService.addLike(tenantContext, id);
     return { likes_count: count };
   }
 
   @Delete(':id/like')
   @RequirePermissions('like.create')
-  async removeLike(@CurrentUser() tenantContext: TenantContext, @Param('id') id: string): Promise<{ likes_count: number }> {
+  async removeLike(@TenantContextDecorator() tenantContext: TenantContext, @Param('id') id: string): Promise<{ likes_count: number }> {
     const count = await this.commentsService.removeLike(tenantContext, id);
     return { likes_count: count };
   }

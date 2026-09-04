@@ -1,11 +1,10 @@
 import { Controller, Post, Get, Put, Delete, Body, Param, Query, UseGuards } from '@nestjs/common';
 import { AnnouncementsService } from '../services/announcements.service';
 import { CreateAnnouncementRequestDto, UpdateAnnouncementRequestDto, PublishAnnouncementRequestDto, AnnouncementResponseDto, AnnouncementListResponseDto } from '../dto';
-import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { RequirePermissions } from '../../common/decorators/require-permissions.decorator';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
-import type { TenantContext } from '../../database/tenant-context';
+import { TenantContextDecorator, type TenantContext } from '../../database/tenant-context';
 
 @Controller('community/announcements')
 @UseGuards(JwtAuthGuard, PermissionsGuard)
@@ -15,7 +14,7 @@ export class AnnouncementsController {
   @Post()
   @RequirePermissions('announcement.create')
   async createAnnouncement(
-    @CurrentUser() tenantContext: TenantContext,
+    @TenantContextDecorator() tenantContext: TenantContext,
     @Body() dto: CreateAnnouncementRequestDto,
   ): Promise<AnnouncementResponseDto> {
     const announcement = await this.announcementsService.createAnnouncement(tenantContext, dto);
@@ -25,7 +24,7 @@ export class AnnouncementsController {
   @Get()
   @RequirePermissions('announcement.read')
   async listAnnouncements(
-    @CurrentUser() tenantContext: TenantContext,
+    @TenantContextDecorator() tenantContext: TenantContext,
     @Query('status') status?: string,
     @Query('limit') limit?: string,
     @Query('offset') offset?: string,
@@ -42,7 +41,7 @@ export class AnnouncementsController {
   @Get('active')
   @RequirePermissions('announcement.read')
   async listActiveAnnouncements(
-    @CurrentUser() tenantContext: TenantContext,
+    @TenantContextDecorator() tenantContext: TenantContext,
     @Query('limit') limit?: string,
     @Query('offset') offset?: string,
   ): Promise<AnnouncementListResponseDto[]> {
@@ -52,7 +51,7 @@ export class AnnouncementsController {
 
   @Get(':id')
   @RequirePermissions('announcement.read')
-  async getAnnouncement(@CurrentUser() tenantContext: TenantContext, @Param('id') id: string): Promise<AnnouncementResponseDto> {
+  async getAnnouncement(@TenantContextDecorator() tenantContext: TenantContext, @Param('id') id: string): Promise<AnnouncementResponseDto> {
     const announcement = await this.announcementsService.getAnnouncement(tenantContext, id);
     return this.mapToResponse(announcement);
   }
@@ -60,7 +59,7 @@ export class AnnouncementsController {
   @Put(':id')
   @RequirePermissions('announcement.update')
   async updateAnnouncement(
-    @CurrentUser() tenantContext: TenantContext,
+    @TenantContextDecorator() tenantContext: TenantContext,
     @Param('id') id: string,
     @Body() dto: UpdateAnnouncementRequestDto,
   ): Promise<AnnouncementResponseDto> {
@@ -71,7 +70,7 @@ export class AnnouncementsController {
   @Post(':id/publish')
   @RequirePermissions('announcement.update')
   async publishAnnouncement(
-    @CurrentUser() tenantContext: TenantContext,
+    @TenantContextDecorator() tenantContext: TenantContext,
     @Param('id') id: string,
     @Body() dto?: PublishAnnouncementRequestDto,
   ): Promise<AnnouncementResponseDto> {
@@ -82,7 +81,7 @@ export class AnnouncementsController {
   @Post(':id/schedule')
   @RequirePermissions('announcement.update')
   async scheduleAnnouncement(
-    @CurrentUser() tenantContext: TenantContext,
+    @TenantContextDecorator() tenantContext: TenantContext,
     @Param('id') id: string,
     @Body() dto: PublishAnnouncementRequestDto,
   ): Promise<AnnouncementResponseDto> {
@@ -95,7 +94,7 @@ export class AnnouncementsController {
 
   @Delete(':id')
   @RequirePermissions('announcement.delete')
-  async deleteAnnouncement(@CurrentUser() tenantContext: TenantContext, @Param('id') id: string): Promise<{ success: boolean }> {
+  async deleteAnnouncement(@TenantContextDecorator() tenantContext: TenantContext, @Param('id') id: string): Promise<{ success: boolean }> {
     await this.announcementsService.deleteAnnouncement(tenantContext, id);
     return { success: true };
   }

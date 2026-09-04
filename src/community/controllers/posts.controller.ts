@@ -1,11 +1,10 @@
 import { Controller, Post, Get, Put, Delete, Body, Param, Query, UseGuards } from '@nestjs/common';
 import { PostsService } from '../services/posts.service';
 import { CreatePostRequestDto, UpdatePostRequestDto, PostResponseDto, PostListResponseDto } from '../dto';
-import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { RequirePermissions } from '../../common/decorators/require-permissions.decorator';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
-import type { TenantContext } from '../../database/tenant-context';
+import { TenantContextDecorator, type TenantContext } from '../../database/tenant-context';
 
 @Controller('community/posts')
 @UseGuards(JwtAuthGuard, PermissionsGuard)
@@ -14,7 +13,7 @@ export class PostsController {
 
   @Post()
   @RequirePermissions('post.create')
-  async createPost(@CurrentUser() tenantContext: TenantContext, @Body() dto: CreatePostRequestDto): Promise<PostResponseDto> {
+  async createPost(@TenantContextDecorator() tenantContext: TenantContext, @Body() dto: CreatePostRequestDto): Promise<PostResponseDto> {
     const post = await this.postsService.createPost(tenantContext, dto);
     return this.mapToResponse(post);
   }
@@ -22,7 +21,7 @@ export class PostsController {
   @Get()
   @RequirePermissions('post.read')
   async listPosts(
-    @CurrentUser() tenantContext: TenantContext,
+    @TenantContextDecorator() tenantContext: TenantContext,
     @Query('limit') limit?: string,
     @Query('offset') offset?: string,
   ): Promise<PostListResponseDto[]> {
@@ -32,7 +31,7 @@ export class PostsController {
 
   @Get(':id')
   @RequirePermissions('post.read')
-  async getPost(@CurrentUser() tenantContext: TenantContext, @Param('id') id: string): Promise<PostResponseDto> {
+  async getPost(@TenantContextDecorator() tenantContext: TenantContext, @Param('id') id: string): Promise<PostResponseDto> {
     const post = await this.postsService.getPost(tenantContext, id);
     return this.mapToResponse(post);
   }
@@ -40,7 +39,7 @@ export class PostsController {
   @Put(':id')
   @RequirePermissions('post.update')
   async updatePost(
-    @CurrentUser() tenantContext: TenantContext,
+    @TenantContextDecorator() tenantContext: TenantContext,
     @Param('id') id: string,
     @Body() dto: UpdatePostRequestDto,
   ): Promise<PostResponseDto> {
@@ -50,21 +49,21 @@ export class PostsController {
 
   @Delete(':id')
   @RequirePermissions('post.delete')
-  async deletePost(@CurrentUser() tenantContext: TenantContext, @Param('id') id: string): Promise<{ success: boolean }> {
+  async deletePost(@TenantContextDecorator() tenantContext: TenantContext, @Param('id') id: string): Promise<{ success: boolean }> {
     await this.postsService.deletePost(tenantContext, id);
     return { success: true };
   }
 
   @Post(':id/like')
   @RequirePermissions('like.create')
-  async addLike(@CurrentUser() tenantContext: TenantContext, @Param('id') id: string): Promise<{ likes_count: number }> {
+  async addLike(@TenantContextDecorator() tenantContext: TenantContext, @Param('id') id: string): Promise<{ likes_count: number }> {
     const count = await this.postsService.addLike(tenantContext, id);
     return { likes_count: count };
   }
 
   @Delete(':id/like')
   @RequirePermissions('like.create')
-  async removeLike(@CurrentUser() tenantContext: TenantContext, @Param('id') id: string): Promise<{ likes_count: number }> {
+  async removeLike(@TenantContextDecorator() tenantContext: TenantContext, @Param('id') id: string): Promise<{ likes_count: number }> {
     const count = await this.postsService.removeLike(tenantContext, id);
     return { likes_count: count };
   }

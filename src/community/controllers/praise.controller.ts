@@ -1,11 +1,10 @@
 import { Controller, Post, Get, Put, Delete, Body, Param, Query, UseGuards } from '@nestjs/common';
 import { PraiseService } from '../services/praise.service';
 import { CreatePraiseRequestDto, UpdatePraiseRequestDto, PraiseResponseDto, PraiseListResponseDto } from '../dto';
-import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { RequirePermissions } from '../../common/decorators/require-permissions.decorator';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
-import type { TenantContext } from '../../database/tenant-context';
+import { TenantContextDecorator, type TenantContext } from '../../database/tenant-context';
 
 @Controller('community/praise')
 @UseGuards(JwtAuthGuard, PermissionsGuard)
@@ -14,7 +13,7 @@ export class PraiseController {
 
   @Post()
   @RequirePermissions('praise.create')
-  async createPraise(@CurrentUser() tenantContext: TenantContext, @Body() dto: CreatePraiseRequestDto): Promise<PraiseResponseDto> {
+  async createPraise(@TenantContextDecorator() tenantContext: TenantContext, @Body() dto: CreatePraiseRequestDto): Promise<PraiseResponseDto> {
     const praise = await this.praiseService.createPraise(tenantContext, dto);
     return this.mapToResponse(praise);
   }
@@ -22,7 +21,7 @@ export class PraiseController {
   @Get()
   @RequirePermissions('praise.read')
   async listPraise(
-    @CurrentUser() tenantContext: TenantContext,
+    @TenantContextDecorator() tenantContext: TenantContext,
     @Query('limit') limit?: string,
     @Query('offset') offset?: string,
   ): Promise<PraiseListResponseDto[]> {
@@ -33,7 +32,7 @@ export class PraiseController {
   @Get('employee/:employeeId')
   @RequirePermissions('praise.read')
   async listPraiseForEmployee(
-    @CurrentUser() tenantContext: TenantContext,
+    @TenantContextDecorator() tenantContext: TenantContext,
     @Param('employeeId') employeeId: string,
     @Query('limit') limit?: string,
     @Query('offset') offset?: string,
@@ -45,7 +44,7 @@ export class PraiseController {
   @Get('badge/:badgeType')
   @RequirePermissions('praise.read')
   async listPraiseByBadge(
-    @CurrentUser() tenantContext: TenantContext,
+    @TenantContextDecorator() tenantContext: TenantContext,
     @Param('badgeType') badgeType: string,
     @Query('limit') limit?: string,
     @Query('offset') offset?: string,
@@ -56,7 +55,7 @@ export class PraiseController {
 
   @Get(':id')
   @RequirePermissions('praise.read')
-  async getPraise(@CurrentUser() tenantContext: TenantContext, @Param('id') id: string): Promise<PraiseResponseDto> {
+  async getPraise(@TenantContextDecorator() tenantContext: TenantContext, @Param('id') id: string): Promise<PraiseResponseDto> {
     const praise = await this.praiseService.getPraise(tenantContext, id);
     return this.mapToResponse(praise);
   }
@@ -64,7 +63,7 @@ export class PraiseController {
   @Put(':id')
   @RequirePermissions('praise.update')
   async updatePraise(
-    @CurrentUser() tenantContext: TenantContext,
+    @TenantContextDecorator() tenantContext: TenantContext,
     @Param('id') id: string,
     @Body() dto: UpdatePraiseRequestDto,
   ): Promise<PraiseResponseDto> {
@@ -74,21 +73,21 @@ export class PraiseController {
 
   @Delete(':id')
   @RequirePermissions('praise.delete')
-  async deletePraise(@CurrentUser() tenantContext: TenantContext, @Param('id') id: string): Promise<{ success: boolean }> {
+  async deletePraise(@TenantContextDecorator() tenantContext: TenantContext, @Param('id') id: string): Promise<{ success: boolean }> {
     await this.praiseService.deletePraise(tenantContext, id);
     return { success: true };
   }
 
   @Post(':id/like')
   @RequirePermissions('like.create')
-  async addLike(@CurrentUser() tenantContext: TenantContext, @Param('id') id: string): Promise<{ likes_count: number }> {
+  async addLike(@TenantContextDecorator() tenantContext: TenantContext, @Param('id') id: string): Promise<{ likes_count: number }> {
     const count = await this.praiseService.addLike(tenantContext, id);
     return { likes_count: count };
   }
 
   @Delete(':id/like')
   @RequirePermissions('like.create')
-  async removeLike(@CurrentUser() tenantContext: TenantContext, @Param('id') id: string): Promise<{ likes_count: number }> {
+  async removeLike(@TenantContextDecorator() tenantContext: TenantContext, @Param('id') id: string): Promise<{ likes_count: number }> {
     const count = await this.praiseService.removeLike(tenantContext, id);
     return { likes_count: count };
   }

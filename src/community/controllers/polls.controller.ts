@@ -1,11 +1,10 @@
 import { Controller, Post, Get, Put, Delete, Body, Param, Query, UseGuards } from '@nestjs/common';
 import { PollsService } from '../services/polls.service';
 import { CreatePollRequestDto, UpdatePollRequestDto, VotePollRequestDto, PollResponseDto, PollListResponseDto } from '../dto';
-import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { RequirePermissions } from '../../common/decorators/require-permissions.decorator';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
-import type { TenantContext } from '../../database/tenant-context';
+import { TenantContextDecorator, type TenantContext } from '../../database/tenant-context';
 
 @Controller('community/polls')
 @UseGuards(JwtAuthGuard, PermissionsGuard)
@@ -14,7 +13,7 @@ export class PollsController {
 
   @Post()
   @RequirePermissions('poll.create')
-  async createPoll(@CurrentUser() tenantContext: TenantContext, @Body() dto: CreatePollRequestDto): Promise<PollResponseDto> {
+  async createPoll(@TenantContextDecorator() tenantContext: TenantContext, @Body() dto: CreatePollRequestDto): Promise<PollResponseDto> {
     const { poll, options } = await this.pollsService.createPoll(tenantContext, dto);
     return this.mapToResponse(poll, options);
   }
@@ -22,7 +21,7 @@ export class PollsController {
   @Get()
   @RequirePermissions('poll.read')
   async listPolls(
-    @CurrentUser() tenantContext: TenantContext,
+    @TenantContextDecorator() tenantContext: TenantContext,
     @Query('status') status?: string,
     @Query('limit') limit?: string,
     @Query('offset') offset?: string,
@@ -33,7 +32,7 @@ export class PollsController {
 
   @Get(':id')
   @RequirePermissions('poll.read')
-  async getPoll(@CurrentUser() tenantContext: TenantContext, @Param('id') id: string): Promise<PollResponseDto> {
+  async getPoll(@TenantContextDecorator() tenantContext: TenantContext, @Param('id') id: string): Promise<PollResponseDto> {
     const { poll, options } = await this.pollsService.getPoll(tenantContext, id);
     return this.mapToResponse(poll, options);
   }
@@ -41,7 +40,7 @@ export class PollsController {
   @Put(':id')
   @RequirePermissions('poll.update')
   async updatePoll(
-    @CurrentUser() tenantContext: TenantContext,
+    @TenantContextDecorator() tenantContext: TenantContext,
     @Param('id') id: string,
     @Body() dto: UpdatePollRequestDto,
   ): Promise<PollResponseDto> {
@@ -51,7 +50,7 @@ export class PollsController {
 
   @Delete(':id')
   @RequirePermissions('poll.delete')
-  async deletePoll(@CurrentUser() tenantContext: TenantContext, @Param('id') id: string): Promise<{ success: boolean }> {
+  async deletePoll(@TenantContextDecorator() tenantContext: TenantContext, @Param('id') id: string): Promise<{ success: boolean }> {
     await this.pollsService.closePoll(tenantContext, id);
     return { success: true };
   }
@@ -59,7 +58,7 @@ export class PollsController {
   @Post(':id/vote')
   @RequirePermissions('poll.vote')
   async votePoll(
-    @CurrentUser() tenantContext: TenantContext,
+    @TenantContextDecorator() tenantContext: TenantContext,
     @Param('id') id: string,
     @Body() dto: VotePollRequestDto,
   ): Promise<{ success: boolean }> {
@@ -69,7 +68,7 @@ export class PollsController {
 
   @Post(':id/close')
   @RequirePermissions('poll.moderate')
-  async closePoll(@CurrentUser() tenantContext: TenantContext, @Param('id') id: string): Promise<PollResponseDto> {
+  async closePoll(@TenantContextDecorator() tenantContext: TenantContext, @Param('id') id: string): Promise<PollResponseDto> {
     const poll = await this.pollsService.closePoll(tenantContext, id);
     return this.mapToResponse(poll);
   }

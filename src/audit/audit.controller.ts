@@ -1,6 +1,7 @@
 import {
   Controller,
   Get,
+  Param,
   Query,
   ParseIntPipe,
   DefaultValuePipe,
@@ -34,10 +35,13 @@ export class AuditController {
     );
 
     return {
+      // old_value/new_value are jsonb columns — pg already parses them into
+      // JS objects, so JSON.parse()'ing them again threw ""[object Object]"
+      // is not valid JSON" on any log with a non-null value; confirmed live.
       logs: logs.map((log) => ({
         ...log,
-        oldValue: log.oldValue ? JSON.parse(log.oldValue as any) : null,
-        newValue: log.newValue ? JSON.parse(log.newValue as any) : null,
+        oldValue: typeof log.oldValue === 'string' ? JSON.parse(log.oldValue) : log.oldValue,
+        newValue: typeof log.newValue === 'string' ? JSON.parse(log.newValue) : log.newValue,
       })),
       pagination: {
         limit: safeLimit,
@@ -48,12 +52,16 @@ export class AuditController {
     };
   }
 
+  // entityType/entityId are path segments, not query params — was reading
+  // them via @Query(), so they were always undefined and the route
+  // effectively required them as ?entityType=&entityId= query strings
+  // instead of the documented /logs/entity/:entityType/:entityId path.
   @Get('logs/entity/:entityType/:entityId')
   @RequirePermissions('audit.read')
   async getEntityAuditLog(
     @Request() req,
-    @Query('entityType') entityType: string,
-    @Query('entityId') entityId: string,
+    @Param('entityType') entityType: string,
+    @Param('entityId') entityId: string,
     @Query('limit', new DefaultValuePipe(50), ParseIntPipe) limit: number,
   ) {
     const tenantContext: TenantContext = req.tenantContext;
@@ -68,8 +76,8 @@ export class AuditController {
 
     return logs.map((log) => ({
       ...log,
-      oldValue: log.oldValue ? JSON.parse(log.oldValue as any) : null,
-      newValue: log.newValue ? JSON.parse(log.newValue as any) : null,
+      oldValue: typeof log.oldValue === 'string' ? JSON.parse(log.oldValue) : log.oldValue,
+      newValue: typeof log.newValue === 'string' ? JSON.parse(log.newValue) : log.newValue,
     }));
   }
 }

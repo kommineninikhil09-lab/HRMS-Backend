@@ -1,11 +1,10 @@
 import { Controller, Post, Get, Delete, Body, Param, Query, UseGuards } from '@nestjs/common';
 import { LikesService } from '../services/likes.service';
 import { CreateLikeRequestDto, LikeResponseDto, LikeListResponseDto } from '../dto';
-import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { RequirePermissions } from '../../common/decorators/require-permissions.decorator';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
-import type { TenantContext } from '../../database/tenant-context';
+import { TenantContextDecorator, type TenantContext } from '../../database/tenant-context';
 
 @Controller('community/likes')
 @UseGuards(JwtAuthGuard, PermissionsGuard)
@@ -14,7 +13,7 @@ export class LikesController {
 
   @Post()
   @RequirePermissions('like.create')
-  async createLike(@CurrentUser() tenantContext: TenantContext, @Body() dto: CreateLikeRequestDto): Promise<LikeResponseDto> {
+  async createLike(@TenantContextDecorator() tenantContext: TenantContext, @Body() dto: CreateLikeRequestDto): Promise<LikeResponseDto> {
     const like = await this.likesService.createLike(tenantContext, dto);
     return this.mapToResponse(like);
   }
@@ -40,7 +39,7 @@ export class LikesController {
 
   @Delete(':likeable_type/:likeable_id')
   @RequirePermissions('like.create')
-  async removeLike(@CurrentUser() tenantContext: TenantContext, @Param('likeable_type') likeableType: string, @Param('likeable_id') likeableId: string): Promise<{ success: boolean }> {
+  async removeLike(@TenantContextDecorator() tenantContext: TenantContext, @Param('likeable_type') likeableType: string, @Param('likeable_id') likeableId: string): Promise<{ success: boolean }> {
     await this.likesService.removeLike(tenantContext, likeableType, likeableId);
     return { success: true };
   }
