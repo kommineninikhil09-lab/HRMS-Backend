@@ -172,6 +172,31 @@ export class LeaveRequestsRepository extends BaseRepository {
     return result.rows.map(toModel);
   }
 
+  /**
+   * Approved leave for **one employee** overlapping [from, to]. Used by the
+   * attendance module to distinguish approved leave from absence. Proper overlap
+   * (not containment) so a request spanning the window edge is still returned.
+   */
+  async findApprovedForEmployeeInRange(
+    tenantContext: TenantContext,
+    employeeId: string,
+    from: string,
+    to: string,
+    executor?: Pool | PoolClient,
+  ): Promise<LeaveRequest[]> {
+    const exe = executor || this.pool;
+    const result = await exe.query(
+      `${SELECT_WITH_JOINS}
+       WHERE lr.organization_id = $1
+         AND lr.employee_id = $2
+         AND lr.status = 'approved'
+         AND NOT (lr.end_date < $3 OR lr.start_date > $4)
+       ORDER BY lr.start_date`,
+      [tenantContext.organizationId, employeeId, from, to],
+    );
+    return result.rows.map(toModel);
+  }
+
   /** Approved leave across the org overlapping a date window (calendar / "on leave today"). */
   async findCalendar(
     tenantContext: TenantContext,

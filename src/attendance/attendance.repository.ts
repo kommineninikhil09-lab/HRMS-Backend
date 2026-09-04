@@ -1,52 +1,90 @@
-import { Injectable } from '@nestjs/common';
-import { BaseRepository } from '../database/base.repository';
+import { Injectable, Inject } from '@nestjs/common';
+import { Pool, PoolClient } from 'pg';
+import { POOL_PROVIDER } from '../database/pool.provider';
 import { TenantContext } from '../database/tenant-context';
 import { toIsoDate } from '../common/util/date.util';
-import { Pool, PoolClient } from 'pg';
 
 export interface AttendanceRecord {
   id: string;
   organization_id: string;
   employee_id: string;
   attendance_date: string;
-  clock_in_time?: string;
-  clock_out_time?: string;
+  clock_in_time: string | null;
+  clock_out_time: string | null;
+  working_minutes: number | null;
+  late_minutes: number | null;
+  early_leave_minutes: number | null;
   status: string;
-  notes?: string;
-  marked_by?: string;
+  source: string;
+  notes: string | null;
+  marked_by: string | null;
   created_at: string;
   updated_at: string;
+  // Joined display fields (present on admin list reads).
+  employee_name?: string | null;
+  employee_code?: string | null;
 }
 
-/** `attendance_date` is a DATE column → normalise to `YYYY-MM-DD`. */
+type NumCol =
+  | 'working_minutes'
+  | 'late_minutes'
+  | 'early_leave_minutes';
+
+/** DATE column → `YYYY-MM-DD`; NUMERIC/int columns → number | null. */
 function toModel(row: any): AttendanceRecord {
   if (!row) return row;
-  return { ...row, attendance_date: toIsoDate(row.attendance_date) };
+  const out = { ...row, attendance_date: toIsoDate(row.attendance_date) };
+  for (const col of ['working_minutes', 'late_minutes', 'early_leave_minutes'] as NumCol[]) {
+    out[col] = row[col] == null ? null : Number(row[col]);
+  }
+  return out;
 }
 
+const SELECT_WITH_EMPLOYEE = `
+  SELECT
+    a.*,
+    NULLIF(TRIM(COALESCE(e.first_name, '') || ' ' || COALESCE(e.last_name, '')), '') AS employee_name,
+    e.employee_code AS employee_code
+  FROM attendance a
+  JOIN employees e ON e.id = a.employee_id
+`;
+
 @Injectable()
-export class AttendanceRepository extends BaseRepository {
+export class AttendanceRepository {
+  constructor(@Inject(POOL_PROVIDER) private pool: Pool) {}
+
   async create(
     tenantContext: TenantContext,
     data: Partial<AttendanceRecord>,
     executor?: Pool | PoolClient,
   ): Promise<AttendanceRecord> {
     const exe = executor || this.pool;
-    const query = `
-      INSERT INTO attendance (organization_id, employee_id, attendance_date, clock_in_time, clock_out_time, status, notes, marked_by)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+    const result = await exe.query(
+      `
+      INSERT INTO attendance (
+        organization_id, employee_id, attendance_date,
+        clock_in_time, clock_out_time, working_minutes,
+        late_minutes, early_leave_minutes,
+        status, source, notes, marked_by
+      )
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
       RETURNING *
-    `;
-    const result = await exe.query(query, [
-      tenantContext.organizationId,
-      data.employee_id,
-      data.attendance_date,
-      data.clock_in_time || null,
-      data.clock_out_time || null,
-      data.status || 'absent',
-      data.notes || null,
-      data.marked_by || null,
-    ]);
+      `,
+      [
+        tenantContext.organizationId,
+        data.employee_id,
+        data.attendance_date,
+        data.clock_in_time ?? null,
+        data.clock_out_time ?? null,
+        data.working_minutes ?? null,
+        data.late_minutes ?? null,
+        data.early_leave_minutes ?? null,
+        data.status ?? 'absent',
+        data.source ?? 'web',
+        data.notes ?? null,
+        data.marked_by ?? null,
+      ],
+    );
     return toModel(result.rows[0]);
   }
 
@@ -57,14 +95,28 @@ export class AttendanceRepository extends BaseRepository {
     executor?: Pool | PoolClient,
   ): Promise<AttendanceRecord | null> {
     const exe = executor || this.pool;
-    const query = `
-      SELECT * FROM attendance
-      WHERE organization_id = $1 AND employee_id = $2 AND attendance_date = $3
-    `;
-    const result = await exe.query(query, [tenantContext.organizationId, employeeId, date]);
+    const result = await exe.query(
+      `SELECT * FROM attendance
+       WHERE organization_id = $1 AND employee_id = $2 AND attendance_date = $3`,
+      [tenantContext.organizationId, employeeId, date],
+    );
     return result.rows[0] ? toModel(result.rows[0]) : null;
   }
 
+  async findById(
+    tenantContext: TenantContext,
+    id: string,
+    executor?: Pool | PoolClient,
+  ): Promise<AttendanceRecord | null> {
+    const exe = executor || this.pool;
+    const result = await exe.query(
+      `${SELECT_WITH_EMPLOYEE} WHERE a.organization_id = $1 AND a.id = $2`,
+      [tenantContext.organizationId, id],
+    );
+    return result.rows[0] ? toModel(result.rows[0]) : null;
+  }
+
+  /** One employee's rows in [startDate, endDate], newest first. */
   async findByDateRange(
     tenantContext: TenantContext,
     employeeId: string,
@@ -73,17 +125,48 @@ export class AttendanceRepository extends BaseRepository {
     executor?: Pool | PoolClient,
   ): Promise<AttendanceRecord[]> {
     const exe = executor || this.pool;
-    const query = `
-      SELECT * FROM attendance
-      WHERE organization_id = $1 AND employee_id = $2 AND attendance_date BETWEEN $3 AND $4
-      ORDER BY attendance_date DESC
-    `;
-    const result = await exe.query(query, [
+    const result = await exe.query(
+      `SELECT * FROM attendance
+       WHERE organization_id = $1 AND employee_id = $2
+         AND attendance_date BETWEEN $3 AND $4
+       ORDER BY attendance_date DESC`,
+      [tenantContext.organizationId, employeeId, startDate, endDate],
+    );
+    return result.rows.map(toModel);
+  }
+
+  /** Org-wide list for HR/admin, with optional employee / status / window filters. */
+  async findForOrg(
+    tenantContext: TenantContext,
+    filters: {
+      from: string;
+      to: string;
+      employeeId?: string;
+      status?: string;
+    },
+    executor?: Pool | PoolClient,
+  ): Promise<AttendanceRecord[]> {
+    const exe = executor || this.pool;
+    const params: any[] = [
       tenantContext.organizationId,
-      employeeId,
-      startDate,
-      endDate,
-    ]);
+      filters.from,
+      filters.to,
+    ];
+    let query = `${SELECT_WITH_EMPLOYEE}
+      WHERE a.organization_id = $1
+        AND a.attendance_date BETWEEN $2 AND $3`;
+
+    if (filters.employeeId) {
+      query += ` AND a.employee_id = $${params.length + 1}`;
+      params.push(filters.employeeId);
+    }
+    if (filters.status) {
+      query += ` AND a.status = $${params.length + 1}`;
+      params.push(filters.status);
+    }
+
+    query += ` ORDER BY a.attendance_date DESC, employee_name ASC`;
+    const result = await exe.query(query, params);
     return result.rows.map(toModel);
   }
 
@@ -96,52 +179,44 @@ export class AttendanceRepository extends BaseRepository {
     const exe = executor || this.pool;
     const fields: string[] = [];
     const values: any[] = [tenantContext.organizationId, attendanceId];
-    let paramIndex = 3;
+    let i = 3;
 
-    if (data.clock_in_time !== undefined) fields.push(`clock_in_time = $${paramIndex++}`), values.push(data.clock_in_time);
-    if (data.clock_out_time !== undefined) fields.push(`clock_out_time = $${paramIndex++}`), values.push(data.clock_out_time);
-    if (data.status !== undefined) fields.push(`status = $${paramIndex++}`), values.push(data.status);
-    if (data.notes !== undefined) fields.push(`notes = $${paramIndex++}`), values.push(data.notes);
+    const set = (col: string, val: any) => {
+      fields.push(`${col} = $${i++}`);
+      values.push(val);
+    };
+
+    if (data.clock_in_time !== undefined) set('clock_in_time', data.clock_in_time);
+    if (data.clock_out_time !== undefined) set('clock_out_time', data.clock_out_time);
+    if (data.working_minutes !== undefined) set('working_minutes', data.working_minutes);
+    if (data.late_minutes !== undefined) set('late_minutes', data.late_minutes);
+    if (data.early_leave_minutes !== undefined) set('early_leave_minutes', data.early_leave_minutes);
+    if (data.status !== undefined) set('status', data.status);
+    if (data.source !== undefined) set('source', data.source);
+    if (data.notes !== undefined) set('notes', data.notes);
+    if (data.marked_by !== undefined) set('marked_by', data.marked_by);
 
     fields.push(`updated_at = now()`);
 
-    const query = `
-      UPDATE attendance
-      SET ${fields.join(', ')}
-      WHERE organization_id = $1 AND id = $2
-      RETURNING *
-    `;
-    const result = await exe.query(query, values);
+    const result = await exe.query(
+      `UPDATE attendance SET ${fields.join(', ')}
+       WHERE organization_id = $1 AND id = $2
+       RETURNING *`,
+      values,
+    );
     return toModel(result.rows[0]);
   }
 
-  async findById(
-    tenantContext: TenantContext,
-    id: string,
+  /** Organisation timezone (IANA name) for deriving the attendance day. */
+  async getOrganizationTimezone(
+    organizationId: string,
     executor?: Pool | PoolClient,
-  ): Promise<AttendanceRecord | null> {
+  ): Promise<string | null> {
     const exe = executor || this.pool;
-    const query = `SELECT * FROM attendance WHERE organization_id = $1 AND id = $2`;
-    const result = await exe.query(query, [tenantContext.organizationId, id]);
-    return result.rows[0] ? toModel(result.rows[0]) : null;
-  }
-
-  async getEmployeeAttendanceSummary(
-    tenantContext: TenantContext,
-    employeeId: string,
-    month: string,
-    executor?: Pool | PoolClient,
-  ): Promise<any> {
-    const exe = executor || this.pool;
-    const query = `
-      SELECT
-        status,
-        COUNT(*) as count
-      FROM attendance
-      WHERE organization_id = $1 AND employee_id = $2 AND TO_CHAR(attendance_date, 'YYYY-MM') = $3
-      GROUP BY status
-    `;
-    const result = await exe.query(query, [tenantContext.organizationId, employeeId, month]);
-    return result.rows.map((r: any) => ({ status: r.status, count: Number(r.count) }));
+    const result = await exe.query<{ timezone: string | null }>(
+      `SELECT timezone FROM organizations WHERE id = $1`,
+      [organizationId],
+    );
+    return result.rows[0]?.timezone ?? null;
   }
 }
