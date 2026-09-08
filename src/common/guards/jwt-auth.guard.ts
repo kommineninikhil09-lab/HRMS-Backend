@@ -11,6 +11,10 @@ import { IS_PUBLIC_KEY } from '../decorators/public.decorator';
 import { Request } from 'express';
 import { TenantContext } from '../../database/tenant-context';
 import { POOL_PROVIDER } from '../../database/pool.provider';
+import {
+  fetchEffectivePermissionCodes,
+  fetchManagementScope,
+} from '../scope/scope.queries';
 
 @Injectable()
 export class JwtAuthGuard extends AuthGuard('jwt-access') {
@@ -51,6 +55,23 @@ export class JwtAuthGuard extends AuthGuard('jwt-access') {
         [tenantContext.userId, tenantContext.organizationId],
       );
       tenantContext.employeeId = result.rows[0]?.id ?? null;
+
+      // Effective permissions + management scope, resolved once per request.
+      // `PermissionsGuard` reuses `tenantContext.permissions` rather than
+      // re-querying. Uses the shared pure queries (no service injection, so the
+      // guard keeps only framework-level dependencies).
+      const permissions = await fetchEffectivePermissionCodes(
+        this.pool,
+        tenantContext.organizationId,
+        tenantContext.userId,
+      );
+      tenantContext.permissions = permissions;
+      tenantContext.scope = await fetchManagementScope(
+        this.pool,
+        tenantContext.organizationId,
+        tenantContext.userId,
+        permissions,
+      );
     }
 
     return true;

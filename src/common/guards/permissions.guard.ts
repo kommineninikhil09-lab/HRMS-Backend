@@ -50,11 +50,14 @@ export class PermissionsGuard implements CanActivate {
       throw new ForbiddenException('Missing authentication context');
     }
 
-    // Get user's effective permissions from database
-    const effectivePermissions = await this.getEffectivePermissions(
-      tenantContext.organizationId,
-      tenantContext.userId,
-    );
+    // Prefer the permissions JwtAuthGuard already resolved for this request;
+    // fall back to a direct query if the context wasn't populated.
+    const effectivePermissions =
+      tenantContext.permissions ??
+      (await this.getEffectivePermissions(
+        tenantContext.organizationId,
+        tenantContext.userId,
+      ));
 
     // Check if user has all required permissions
     const hasAllPermissions = requiredPermissions.every((required) =>

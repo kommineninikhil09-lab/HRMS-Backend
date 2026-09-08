@@ -13,6 +13,7 @@ import { ResponseEnvelopeInterceptor } from './common/interceptors/response-enve
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import { PermissionsGuard } from './common/guards/permissions.guard';
 import { DatabaseModule } from './database/database.module';
+import { ScopeModule } from './common/scope/scope.module';
 import { HealthController } from './health/health.controller';
 import { AuthModule } from './auth/auth.module';
 import { AuditModule } from './audit/audit.module';
@@ -45,6 +46,7 @@ import { CommunityModule } from './community/community.module';
       envFilePath: process.env.NODE_ENV === 'test' ? '.env.test' : '.env',
     }),
     DatabaseModule,
+    ScopeModule,
     AuditModule,
     AuthModule,
     UsersModule,

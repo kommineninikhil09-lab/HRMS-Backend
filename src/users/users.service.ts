@@ -1,8 +1,16 @@
-import { Injectable, BadRequestException, NotFoundException, Optional, Inject } from '@nestjs/common';
+import {
+  Injectable,
+  BadRequestException,
+  ForbiddenException,
+  NotFoundException,
+  Optional,
+  Inject,
+} from '@nestjs/common';
 import * as bcrypt from 'bcrypt';
 import { UsersRepository, User } from './users.repository';
 import { TenantContext } from '../database/tenant-context';
 import { AuditService } from '../audit/audit.service';
+import { TransactionService } from '../database/transaction.service';
 import { Pool } from 'pg';
 import { POOL_PROVIDER } from '../database/pool.provider';
 
@@ -10,6 +18,7 @@ import { POOL_PROVIDER } from '../database/pool.provider';
 export class UsersService {
   constructor(
     private usersRepository: UsersRepository,
+    private readonly transactionService: TransactionService,
     @Optional() private auditService?: AuditService,
     @Inject(POOL_PROVIDER) private pool?: Pool,
   ) {}
@@ -174,6 +183,15 @@ export class UsersService {
     );
   }
 
+  /**
+   * Set a user's **single primary role** (one role per organization/user).
+   * Replaces whatever role they currently hold.
+   *
+   * Anti-escalation: the caller may only assign a role whose permission set is a
+   * subset of their own effective permissions — so an Admin can never grant
+   * Super Admin. (The endpoint is already `role.assign`-gated; this is
+   * defence-in-depth and the extension point for future delegated assignment.)
+   */
   async assignRoleToUser(
     tenantContext: TenantContext,
     userId: string,
@@ -183,49 +201,43 @@ export class UsersService {
       throw new Error('Database pool not available');
     }
 
-    // Check if role exists
-    const roleCheck = await this.pool.query(
+    const roleCheck = await this.pool.query<{ id: string }>(
       'SELECT id FROM roles WHERE id = $1 AND organization_id = $2',
       [roleId, tenantContext.organizationId],
     );
-
     if (roleCheck.rows.length === 0) {
       throw new NotFoundException('Role not found');
     }
 
-    // Check if user already has this role
-    const existing = await this.pool.query(
-      'SELECT id FROM user_roles WHERE user_id = $1 AND role_id = $2',
-      [userId, roleId],
+    const { rows: targetPerms } = await this.pool.query<{ code: string }>(
+      `SELECT p.code
+       FROM role_permissions rp
+       JOIN permissions p ON p.id = rp.permission_id
+       WHERE rp.role_id = $1`,
+      [roleId],
     );
-
-    if (existing.rows.length > 0) {
-      throw new BadRequestException('User already has this role');
+    const callerPerms = new Set(tenantContext.permissions ?? []);
+    const escalates = targetPerms.some((p) => !callerPerms.has(p.code));
+    if (escalates) {
+      throw new ForbiddenException(
+        'You cannot assign a role that grants permissions you do not hold',
+      );
     }
 
-    // Assign role
-    await this.pool.query(
-      'INSERT INTO user_roles (user_id, role_id, organization_id) VALUES ($1, $2, $3)',
-      [userId, roleId, tenantContext.organizationId],
-    );
-  }
+    await this.transactionService.runInTransaction(async (client) => {
+      await client.query(
+        'DELETE FROM user_roles WHERE organization_id = $1 AND user_id = $2',
+        [tenantContext.organizationId, userId],
+      );
+      await client.query(
+        `INSERT INTO user_roles (organization_id, user_id, role_id, assigned_by)
+         VALUES ($1, $2, $3, $4)`,
+        [tenantContext.organizationId, userId, roleId, tenantContext.userId],
+      );
+    });
 
-  async removeRoleFromUser(
-    tenantContext: TenantContext,
-    userId: string,
-    roleId: string,
-  ): Promise<void> {
-    if (!this.pool) {
-      throw new Error('Database pool not available');
-    }
-
-    const result = await this.pool.query(
-      'DELETE FROM user_roles WHERE user_id = $1 AND role_id = $2 AND organization_id = $3',
-      [userId, roleId, tenantContext.organizationId],
-    );
-
-    if (result.rowCount === 0) {
-      throw new NotFoundException('User role assignment not found');
+    if (this.auditService) {
+      await this.auditService.auditRoleAssigned(tenantContext, userId, roleId);
     }
   }
 }

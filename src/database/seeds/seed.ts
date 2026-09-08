@@ -11,16 +11,6 @@ if (!connectionString) {
 
 const pool = new Pool({ connectionString });
 
-interface SeedData {
-  organizationId: string;
-  adminUserId: string;
-  hrManagerUserId: string;
-  employeeUserId: string;
-  adminRoleId: string;
-  hrManagerRoleId: string;
-  employeeRoleId: string;
-}
-
 async function seed() {
   const client = await pool.connect();
 
@@ -55,7 +45,9 @@ async function seed() {
       ['role.create', 'Create roles', 'role'],
       ['role.update', 'Update roles', 'role'],
       ['role.delete', 'Delete roles', 'role'],
+      ['role.assign', 'Assign a role to a user', 'role'],
       ['permission.read', 'Read permissions', 'permission'],
+      ['scope.all', 'Organization-wide management scope', 'scope'],
       ['organization.read', 'Read organizations', 'organization'],
       ['organization.update', 'Update organizations', 'organization'],
       ['organization_structure.read', 'View organization structure', 'organization'],
@@ -95,7 +87,8 @@ async function seed() {
     }
     console.log(`✓ ${permissions.length} permissions seeded`);
 
-    // 3. Create roles
+    // 3. Create roles — exactly three: Employee, Admin, Super Admin.
+    //    (HR Manager was merged into Super Admin by migration 1724210000000.)
     console.log('👥 Creating roles...');
 
     const adminRoleResult = await client.query<{ id: string }>(
@@ -105,25 +98,14 @@ async function seed() {
       ON CONFLICT (organization_id, name) DO UPDATE SET updated_at = NOW()
       RETURNING id
       `,
-      [organizationId, 'Admin', 'Administrator with full access', true],
-    );
-    const adminRoleId = adminRoleResult.rows[0].id;
-
-    const hrManagerRoleResult = await client.query<{ id: string }>(
-      `
-      INSERT INTO roles (organization_id, name, description, is_system)
-      VALUES ($1, $2, $3, $4)
-      ON CONFLICT (organization_id, name) DO UPDATE SET updated_at = NOW()
-      RETURNING id
-      `,
       [
         organizationId,
-        'HR Manager',
-        'HR manager with employee and leave management access',
+        'Admin',
+        'Manager / team-lead — scoped to explicitly assigned teams/departments',
         true,
       ],
     );
-    const hrManagerRoleId = hrManagerRoleResult.rows[0].id;
+    const adminRoleId = adminRoleResult.rows[0].id;
 
     const employeeRoleResult = await client.query<{ id: string }>(
       `
@@ -136,46 +118,27 @@ async function seed() {
     );
     const employeeRoleId = employeeRoleResult.rows[0].id;
 
-    console.log(`✓ 3 roles created`);
+    console.log(`✓ roles created`);
 
-    // 4. Assign permissions to Admin role (all permissions)
+    // 4. Assign permissions to the Admin role — team-lead set only. Scope
+    //    ("who") is enforced separately via manager_scopes.
     console.log('🔑 Assigning permissions to Admin role...');
-    const adminPermissions = Object.values(permissionIds);
-
-    for (const permissionId of adminPermissions) {
-      await client.query(
-        `
-        INSERT INTO role_permissions (organization_id, role_id, permission_id)
-        VALUES ($1, $2, $3)
-        ON CONFLICT (role_id, permission_id) DO NOTHING
-        `,
-        [organizationId, adminRoleId, permissionId],
-      );
-    }
-    console.log(`✓ ${adminPermissions.length} permissions assigned to Admin`);
-
-    // 5. Assign permissions to HR Manager role
-    console.log('🔑 Assigning permissions to HR Manager role...');
-    const hrManagerPermissions = [
-      'user.read',
+    const adminPermissions = [
       'employee.read',
-      'employee.create',
-      'employee.update',
-      'organization.read',
-      'organization_structure.read',
-      'organization_structure.write',
-      'audit.read',
       'attendance.read',
+      'attendance.write',
       'attendance.manage',
       'leave.read',
+      'leave.write',
       'leave.approve',
       'ess.read',
       'ess.update',
+      'organization.read',
+      'organization_structure.read',
       'holiday.read',
-      'holiday.write',
     ];
 
-    for (const code of hrManagerPermissions) {
+    for (const code of adminPermissions) {
       if (permissionIds[code]) {
         await client.query(
           `
@@ -183,11 +146,11 @@ async function seed() {
           VALUES ($1, $2, $3)
           ON CONFLICT (role_id, permission_id) DO NOTHING
           `,
-          [organizationId, hrManagerRoleId, permissionIds[code]],
+          [organizationId, adminRoleId, permissionIds[code]],
         );
       }
     }
-    console.log(`✓ ${hrManagerPermissions.length} permissions assigned to HR Manager`);
+    console.log(`✓ ${adminPermissions.length} permissions assigned to Admin`);
 
     // 6. Assign permissions to Employee role
     console.log('🔑 Assigning permissions to Employee role...');
@@ -281,51 +244,29 @@ async function seed() {
     );
     const employeeUserId = employeeUserResult.rows[0].id;
 
-    console.log(`✓ 3 users created`);
-
-    // 8. Assign roles to users
-    console.log('🔗 Assigning roles to users...');
-
-    await client.query(
+    // A second Admin used to exercise the "Admin with no management scope
+    // manages nobody" (fail-closed) path from `seed:dev`. Assign teams via
+    // PUT /admin/users/:id/scopes to give it real reach.
+    const admin2Password = await bcrypt.hash('Admin@123456', 12);
+    const admin2UserResult = await client.query<{ id: string }>(
       `
-      INSERT INTO user_roles (organization_id, user_id, role_id, assigned_by)
-      VALUES ($1, $2, $3, $4)
-      ON CONFLICT (user_id, role_id) DO NOTHING
+      INSERT INTO users (organization_id, email, password_hash, first_name, last_name, auth_provider, status)
+      VALUES ($1, $2, $3, $4, $5, $6, $7)
+      ON CONFLICT (lower(email)) DO UPDATE SET updated_at = NOW()
+      RETURNING id
       `,
-      [organizationId, adminUserId, adminRoleId, adminUserId],
+      [organizationId, 'admin2@dev-org.local', admin2Password, 'Team', 'Admin', 'local', 'active'],
     );
+    const admin2UserId = admin2UserResult.rows[0].id;
 
-    await client.query(
-      `
-      INSERT INTO user_roles (organization_id, user_id, role_id, assigned_by)
-      VALUES ($1, $2, $3, $4)
-      ON CONFLICT (user_id, role_id) DO NOTHING
-      `,
-      [organizationId, hrManagerUserId, hrManagerRoleId, adminUserId],
-    );
+    console.log(`✓ 4 users created`);
 
-    await client.query(
-      `
-      INSERT INTO user_roles (organization_id, user_id, role_id, assigned_by)
-      VALUES ($1, $2, $3, $4)
-      ON CONFLICT (user_id, role_id) DO NOTHING
-      `,
-      [organizationId, employeeUserId, employeeRoleId, adminUserId],
-    );
-
-    console.log(`✓ Roles assigned to users`);
-
-    // 8b. Super Admin role.
-    // Migration 1724180000000 creates this system role and grants it every
-    // permission that exists at migration time. seed.ts adds further permission
-    // codes (user.*, role.*, employee.*, …), so re-grant the full catalogue here
-    // to keep "Super Admin = all permissions". The migration deliberately does
-    // not assign the role to anyone; for local dev we give it to the admin user.
+    // 8. Super Admin role — holds every permission (incl. scope.all, role.assign).
     console.log('👑 Configuring Super Admin role...');
     const superAdminRoleResult = await client.query<{ id: string }>(
       `
       INSERT INTO roles (organization_id, name, description, is_system)
-      VALUES ($1, 'Super Admin', 'Full access to every permission', TRUE)
+      VALUES ($1, 'Super Admin', 'Organization-wide HR administrator', TRUE)
       ON CONFLICT (organization_id, name) DO UPDATE SET updated_at = NOW()
       RETURNING id
       `,
@@ -341,18 +282,30 @@ async function seed() {
       `,
       [organizationId, superAdminRoleId],
     );
-
-    await client.query(
-      `
-      INSERT INTO user_roles (organization_id, user_id, role_id, assigned_by)
-      VALUES ($1, $2, $3, $4)
-      ON CONFLICT (user_id, role_id) DO NOTHING
-      `,
-      [organizationId, adminUserId, superAdminRoleId, adminUserId],
-    );
     console.log(
-      `✓ Super Admin role holds every permission (${superAdminGrant.rowCount} new grants) and is assigned to admin@dev-org.local`,
+      `✓ Super Admin role holds every permission (${superAdminGrant.rowCount} new grants)`,
     );
+
+    // 8b. One primary role per user.
+    console.log('🔗 Assigning one primary role per user...');
+    const roleAssignments: Array<[userId: string, roleId: string]> = [
+      [adminUserId, superAdminRoleId], // admin@      -> Super Admin
+      [hrManagerUserId, superAdminRoleId], // hrmanager@  -> Super Admin (merged)
+      [admin2UserId, adminRoleId], // admin2@     -> Admin (unscoped)
+      [employeeUserId, employeeRoleId], // employee@   -> Employee
+    ];
+    for (const [uid, rid] of roleAssignments) {
+      await client.query(
+        `DELETE FROM user_roles WHERE organization_id = $1 AND user_id = $2`,
+        [organizationId, uid],
+      );
+      await client.query(
+        `INSERT INTO user_roles (organization_id, user_id, role_id, assigned_by)
+         VALUES ($1, $2, $3, $4)`,
+        [organizationId, uid, rid, adminUserId],
+      );
+    }
+    console.log(`✓ Roles assigned (admin@ & hrmanager@ -> Super Admin)`);
 
     // 9. Create employee records for users (Phase 1)
     console.log('👨‍💼 Creating employee records...');
@@ -461,9 +414,10 @@ async function seed() {
 
     console.log('✅ Seed completed successfully!');
     console.log('\n📝 Test credentials:');
-    console.log('  Admin:      admin@dev-org.local / Admin@123456');
-    console.log('  HR Manager: hrmanager@dev-org.local / HRManager@123456');
-    console.log('  Employee:   employee@dev-org.local / Employee@123456');
+    console.log('  Super Admin: admin@dev-org.local     / Admin@123456');
+    console.log('  Super Admin: hrmanager@dev-org.local / HRManager@123456  (ex HR Manager)');
+    console.log('  Admin:       admin2@dev-org.local    / Admin@123456      (no scope until assigned)');
+    console.log('  Employee:    employee@dev-org.local  / Employee@123456');
     console.log('\n🎯 Available Features:');
     console.log('  - Attendance: Clock in/out, track daily attendance, view summary');
     console.log('  - Leave: Apply for leave, view balance, approval workflows');

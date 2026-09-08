@@ -135,13 +135,18 @@ export class AttendanceRepository {
     return result.rows.map(toModel);
   }
 
-  /** Org-wide list for HR/admin, with optional employee / status / window filters. */
+  /**
+   * Org-wide list for HR/admin, with optional employee / status / window
+   * filters. `employeeIds`, when provided, restricts the result to that set
+   * (used to enforce a manager's team scope); an empty array returns nothing.
+   */
   async findForOrg(
     tenantContext: TenantContext,
     filters: {
       from: string;
       to: string;
       employeeId?: string;
+      employeeIds?: string[];
       status?: string;
     },
     executor?: Pool | PoolClient,
@@ -159,6 +164,10 @@ export class AttendanceRepository {
     if (filters.employeeId) {
       query += ` AND a.employee_id = $${params.length + 1}`;
       params.push(filters.employeeId);
+    }
+    if (filters.employeeIds) {
+      query += ` AND a.employee_id = ANY($${params.length + 1}::uuid[])`;
+      params.push(filters.employeeIds);
     }
     if (filters.status) {
       query += ` AND a.status = $${params.length + 1}`;

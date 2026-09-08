@@ -16,11 +16,21 @@ import {
 } from '@nestjs/common';
 import { UsersService } from './users.service';
 import { PermissionsService } from '../permissions/permissions.service';
+import { ScopeService } from '../common/scope/scope.service';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { PermissionsGuard } from '../common/guards/permissions.guard';
 import { RequirePermissions } from '../common/decorators/require-permissions.decorator';
 import { TenantContext } from '../database/tenant-context';
 import { UpdateMeDto } from './dto/update-me.dto';
+import {
+  AssignRoleDto,
+  ManagerScopeDto,
+  ReplaceManagerScopesDto,
+} from './dto/role-assignment.dto';
+
+// Gate for role + scope administration. A dedicated `scope.assign` code can be
+// swapped in here later without touching the handlers.
+const SCOPE_ADMIN_PERMISSION = 'role.assign';
 
 interface UserWithPermissions {
   id: string;
@@ -50,6 +60,7 @@ export class UsersController {
   constructor(
     private usersService: UsersService,
     private permissionsService: PermissionsService,
+    private scopeService: ScopeService,
   ) {}
 
   // ---- self-service (any authenticated user) ----
@@ -286,18 +297,15 @@ export class UsersController {
     return { message: 'User deleted successfully' };
   }
 
+  /** Set a user's single primary role (replaces the current one). */
   @Post('/admin/users/:id/roles')
-  @RequirePermissions('user.update')
+  @RequirePermissions('role.assign')
   async assignRole(
     @Request() req: any,
     @Param('id') userId: string,
-    @Body() body: { roleId: string },
+    @Body() body: AssignRoleDto,
   ): Promise<{ message: string; roles: { id: string; name: string }[] }> {
     const tenantContext: TenantContext = req.tenantContext;
-
-    if (!body.roleId) {
-      throw new BadRequestException('roleId is required');
-    }
 
     const user = await this.usersService.getUserById(tenantContext, userId);
     if (!user) {
@@ -314,28 +322,16 @@ export class UsersController {
     return { message: 'Role assigned successfully', roles };
   }
 
+  /**
+   * Deprecated: each user has exactly one primary role. Assign a different role
+   * with `POST /admin/users/:id/roles` instead of removing the current one.
+   */
   @Delete('/admin/users/:id/roles/:roleId')
-  @RequirePermissions('user.update')
-  async removeRole(
-    @Request() req: any,
-    @Param('id') userId: string,
-    @Param('roleId') roleId: string,
-  ): Promise<{ message: string; roles: { id: string; name: string }[] }> {
-    const tenantContext: TenantContext = req.tenantContext;
-
-    const user = await this.usersService.getUserById(tenantContext, userId);
-    if (!user) {
-      throw new NotFoundException('User not found');
-    }
-
-    await this.usersService.removeRoleFromUser(tenantContext, userId, roleId);
-
-    const roles = await this.permissionsService.getUserRoles(
-      tenantContext.organizationId,
-      userId,
+  @RequirePermissions('role.assign')
+  async removeRole(): Promise<never> {
+    throw new BadRequestException(
+      'Users have exactly one primary role. Use POST /admin/users/:id/roles to change it.',
     );
-
-    return { message: 'Role removed successfully', roles };
   }
 
   @Get('/admin/roles')
@@ -350,5 +346,70 @@ export class UsersController {
     );
 
     return { roles };
+  }
+
+  // ---- management scope (which employees an Admin may act on) ----
+
+  @Get('/admin/users/:id/scopes')
+  @RequirePermissions(SCOPE_ADMIN_PERMISSION)
+  async listUserScopes(@Request() req: any, @Param('id') userId: string) {
+    const tenantContext: TenantContext = req.tenantContext;
+    await this.usersService.getUserById(tenantContext, userId);
+    return {
+      scopes: await this.scopeService.listScopes(
+        tenantContext.organizationId,
+        userId,
+      ),
+    };
+  }
+
+  /** Replace a user's entire management-scope set. */
+  @Put('/admin/users/:id/scopes')
+  @RequirePermissions(SCOPE_ADMIN_PERMISSION)
+  async replaceUserScopes(
+    @Request() req: any,
+    @Param('id') userId: string,
+    @Body() dto: ReplaceManagerScopesDto,
+  ) {
+    const tenantContext: TenantContext = req.tenantContext;
+    const scopes = await this.scopeService.replaceScopes(
+      tenantContext,
+      userId,
+      dto.scopes.map((s) => ({ scope_type: s.scopeType, scope_id: s.scopeId })),
+    );
+    return { scopes };
+  }
+
+  /** Add one scope assignment. */
+  @Post('/admin/users/:id/scopes')
+  @RequirePermissions(SCOPE_ADMIN_PERMISSION)
+  async addUserScope(
+    @Request() req: any,
+    @Param('id') userId: string,
+    @Body() dto: ManagerScopeDto,
+  ) {
+    const tenantContext: TenantContext = req.tenantContext;
+    const scopes = await this.scopeService.addScope(tenantContext, userId, {
+      scope_type: dto.scopeType,
+      scope_id: dto.scopeId,
+    });
+    return { scopes };
+  }
+
+  /** Remove one scope assignment by its row id. */
+  @Delete('/admin/users/:id/scopes/:scopeId')
+  @RequirePermissions(SCOPE_ADMIN_PERMISSION)
+  async removeUserScope(
+    @Request() req: any,
+    @Param('id') userId: string,
+    @Param('scopeId') scopeId: string,
+  ) {
+    const tenantContext: TenantContext = req.tenantContext;
+    const scopes = await this.scopeService.removeScope(
+      tenantContext,
+      userId,
+      scopeId,
+    );
+    return { scopes };
   }
 }

@@ -10,6 +10,7 @@ export const PERMISSIONS = {
   ROLE_CREATE: 'role.create',
   ROLE_UPDATE: 'role.update',
   ROLE_DELETE: 'role.delete',
+  ROLE_ASSIGN: 'role.assign',
 
   // Permissions
   PERMISSION_READ: 'permission.read',
@@ -53,6 +54,10 @@ export const PERMISSIONS = {
 
   // Audit
   AUDIT_READ: 'audit.read',
+
+  // Management scope — organization-wide (Super Admin). Absence + no
+  // manager_scopes rows => self-only. Never checked by role name.
+  SCOPE_ALL: 'scope.all',
 } as const;
 
 export type PermissionCode = typeof PERMISSIONS[keyof typeof PERMISSIONS];

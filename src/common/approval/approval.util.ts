@@ -32,17 +32,21 @@ export async function resolveApproverUserId(
 }
 
 /**
- * Fallback approver when an employee has no (usable) reporting manager: any
- * active user in the organisation who holds a given approval permission, chosen
- * deterministically. Role-based — no hardcoded users. Returns `null` when the
- * org has nobody who can approve.
+ * Fallback approver when an employee has no (usable) reporting manager: an
+ * active user in the organisation who holds **every** permission code in
+ * `requiredPermissionCodes`, chosen deterministically. Role-based — no hardcoded
+ * users. Used with `['leave.approve', 'scope.all']` so the fallback is always an
+ * organisation-wide approver, never an out-of-scope team Admin. Returns `null`
+ * when nobody qualifies.
  */
 export async function resolveFallbackApproverUserId(
   executor: Pool | PoolClient,
   organizationId: string,
-  permissionCode: string,
+  requiredPermissionCodes: string[],
   excludeUserId?: string,
 ): Promise<string | null> {
+  if (requiredPermissionCodes.length === 0) return null;
+
   const result = await executor.query<{ user_id: string }>(
     `
     SELECT ur.user_id
@@ -52,13 +56,20 @@ export async function resolveFallbackApproverUserId(
     JOIN permissions p ON p.id = rp.permission_id
     JOIN users u ON u.id = ur.user_id
     WHERE ur.organization_id = $1
-      AND p.code = $2
+      AND p.code = ANY($2::text[])
       AND u.status = 'active'
       AND ($3::uuid IS NULL OR ur.user_id <> $3::uuid)
+    GROUP BY ur.user_id, u.created_at, u.id
+    HAVING COUNT(DISTINCT p.code) = $4
     ORDER BY u.created_at, u.id
     LIMIT 1
     `,
-    [organizationId, permissionCode, excludeUserId ?? null],
+    [
+      organizationId,
+      requiredPermissionCodes,
+      excludeUserId ?? null,
+      requiredPermissionCodes.length,
+    ],
   );
   return result.rows[0]?.user_id ?? null;
 }

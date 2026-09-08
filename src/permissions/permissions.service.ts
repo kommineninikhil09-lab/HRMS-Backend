@@ -1,6 +1,7 @@
 import { Injectable, BadRequestException, Inject } from '@nestjs/common';
 import { PermissionsRepository, Permission } from './permissions.repository';
 import { PERMISSIONS } from '../common/constants/permissions.constants';
+import { fetchEffectivePermissionCodes } from '../common/scope/scope.queries';
 import { Pool } from 'pg';
 import { POOL_PROVIDER } from '../database/pool.provider';
 
@@ -48,27 +49,12 @@ export class PermissionsService {
     return this.permissionsRepository.findByModule(module);
   }
 
+  /** Uses the shared query so the join lives in exactly one place. */
   async getEffectivePermissions(
     organizationId: string,
     userId: string,
   ): Promise<string[]> {
-    const query = `
-      SELECT DISTINCT p.code
-      FROM user_roles ur
-      JOIN roles r ON ur.role_id = r.id
-      JOIN role_permissions rp ON r.id = rp.role_id
-      JOIN permissions p ON rp.permission_id = p.id
-      WHERE ur.organization_id = $1
-        AND ur.user_id = $2
-        AND r.organization_id = $1
-    `;
-
-    const result = await this.pool.query<{ code: string }>(query, [
-      organizationId,
-      userId,
-    ]);
-
-    return result.rows.map((row) => row.code);
+    return fetchEffectivePermissionCodes(this.pool, organizationId, userId);
   }
 
   async getUserRoles(

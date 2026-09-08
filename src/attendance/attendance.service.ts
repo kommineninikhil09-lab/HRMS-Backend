@@ -16,6 +16,10 @@ import {
   monthRange,
 } from '../common/util/attendance-date.util';
 import {
+  assertActingOnEmployee,
+  scopedEmployeeIds,
+} from '../common/scope/scope.util';
+import {
   CheckInDto,
   CheckOutDto,
   AttendanceQueryDto,
@@ -293,12 +297,17 @@ export class AttendanceService {
 
     if (query.employeeId) {
       await this.assertEmployeeInOrg(tenantContext, query.employeeId);
+      assertActingOnEmployee(tenantContext, query.employeeId);
     }
+
+    // Restrict to the caller's management scope (`null` => organisation-wide).
+    const scopeIds = scopedEmployeeIds(tenantContext);
 
     return this.repository.findForOrg(tenantContext, {
       from,
       to,
       employeeId: query.employeeId,
+      employeeIds: scopeIds ?? undefined,
       status: query.status,
     });
   }
@@ -308,6 +317,7 @@ export class AttendanceService {
     employeeId: string,
     query: AttendanceQueryDto,
   ): Promise<AttendanceDayView[]> {
+    assertActingOnEmployee(tenantContext, employeeId);
     return this.getHistory(tenantContext, employeeId, query);
   }
 
@@ -316,6 +326,7 @@ export class AttendanceService {
     employeeId: string,
     query: AttendanceQueryDto,
   ): Promise<AttendanceSummary> {
+    assertActingOnEmployee(tenantContext, employeeId);
     return this.getSummary(tenantContext, employeeId, query);
   }
 
@@ -326,6 +337,7 @@ export class AttendanceService {
     markedByUserId: string,
   ): Promise<AttendanceRecord> {
     await this.assertEmployeeInOrg(tenantContext, dto.employee_id);
+    assertActingOnEmployee(tenantContext, dto.employee_id);
 
     return this.transactionService.runInTransaction(async (client) => {
       const existing = await this.repository.findByDate(

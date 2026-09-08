@@ -16,6 +16,7 @@ import { AuditService } from '../audit/audit.service';
 import { TransactionService } from '../database/transaction.service';
 import { getFinancialYear } from '../common/util/financial-year.util';
 import { parseIsoDate, toIsoDate } from '../common/util/date.util';
+import { assertActingOnEmployee } from '../common/scope/scope.util';
 import {
   resolveApproverUserId,
   resolveFallbackApproverUserId,
@@ -28,6 +29,7 @@ import {
 import { ApproveLeaveRequestDto } from './dto/approve-leave-request.dto';
 
 const APPROVE_PERMISSION = 'leave.approve';
+const ORG_SCOPE_PERMISSION = 'scope.all';
 
 @Injectable()
 export class LeaveService {
@@ -117,7 +119,9 @@ export class LeaveService {
 
       const requiresApproval = leaveType.requires_approval;
 
-      // Approver = reporting manager's user, else a role-based HR/admin fallback.
+      // Approver = reporting manager's user, else an organisation-wide approver
+      // (holds both `leave.approve` and `scope.all`). Never an out-of-scope
+      // team Admin.
       let approverUserId = await resolveApproverUserId(
         this.employeesRepo,
         tenantContext,
@@ -128,13 +132,13 @@ export class LeaveService {
         approverUserId = await resolveFallbackApproverUserId(
           client,
           tenantContext.organizationId,
-          APPROVE_PERMISSION,
+          [APPROVE_PERMISSION, ORG_SCOPE_PERMISSION],
           tenantContext.userId,
         );
       }
       if (!approverUserId && requiresApproval) {
         throw new BadRequestException(
-          'No approver could be determined for your leave request. Please ask HR to set your reporting manager.',
+          'No approver could be determined for your leave request: your reporting manager is not set and no organization-wide approver is available. Please contact HR.',
         );
       }
 
@@ -355,6 +359,10 @@ export class LeaveService {
   }
 
   async getLeaveBalance(tenantContext: TenantContext, employeeId: string) {
+    // Self-service passes the caller's own employee id; a manager route passes
+    // someone else's — allowed only within the caller's management scope.
+    assertActingOnEmployee(tenantContext, employeeId);
+
     const fy = this.getCurrentFinancialYear();
     const balances = await this.leaveBalanceRepo.findByEmployee(
       tenantContext,
@@ -375,6 +383,8 @@ export class LeaveService {
     employeeId: string,
     filters?: { status?: string; from?: string; to?: string },
   ) {
+    assertActingOnEmployee(tenantContext, employeeId);
+
     return this.leaveRequestsRepo.findByEmployee(tenantContext, employeeId, {
       status: filters?.status,
       startDate: filters?.from,
@@ -394,7 +404,8 @@ export class LeaveService {
 
   /**
    * A request is visible to: its owner (the employee), its assigned approver, or
-   * any user holding the `leave.approve` permission (managers / HR).
+   * a user who both holds `leave.approve` and has the request's employee within
+   * their management scope (a team Admin for their team; Super Admin org-wide).
    */
   async getLeaveRequestById(tenantContext: TenantContext, requestId: string) {
     const request = await this.leaveRequestsRepo.findById(
@@ -411,15 +422,19 @@ export class LeaveService {
     const isApprover = request.approver_id === tenantContext.userId;
 
     if (!isOwner && !isApprover) {
-      const perms = await this.permissionsService.getEffectivePermissions(
-        tenantContext.organizationId,
-        tenantContext.userId,
-      );
+      const perms =
+        tenantContext.permissions ??
+        (await this.permissionsService.getEffectivePermissions(
+          tenantContext.organizationId,
+          tenantContext.userId,
+        ));
       if (!perms.includes(APPROVE_PERMISSION)) {
         throw new ForbiddenException(
           'You are not allowed to view this leave request',
         );
       }
+      // Holds leave.approve — but only within scope.
+      assertActingOnEmployee(tenantContext, request.employee_id);
     }
 
     return request;
