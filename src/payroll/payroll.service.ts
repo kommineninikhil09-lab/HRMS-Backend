@@ -276,7 +276,7 @@ export class PayrollService {
 
     const components = await this.structureComponentRepository.findByStructure(
       tenantContext,
-      assignment.structure_id,
+      (assignment as any).structureId,
     );
 
     if (components.length === 0) {
@@ -304,13 +304,17 @@ export class PayrollService {
 
       for (const component of components) {
         const amount = component.amount || 0;
-        const componentType = (component.component_type || 'deduction') as 'earnings' | 'deduction' | 'tax';
+        // StructureComponentRepository.findByStructure goes through BaseRepository.query,
+        // which camelCases columns at runtime even though StructureComponentWithDetails
+        // still declares snake_case — cast to read the real fields.
+        const c = component as any;
+        const componentType = (c.componentType || 'deduction') as 'earnings' | 'deduction' | 'tax';
 
         await this.slipComponentRepository.addComponentToSlip(
           tenantContext,
           slip.id,
-          component.component_id,
-          component.component_name || 'Unknown Component',
+          c.componentId,
+          c.componentName || 'Unknown Component',
           componentType,
           amount,
           client,
