@@ -53,7 +53,8 @@ export class PerformanceAppraisalRepository extends BaseRepository {
       WHERE organization_id = $1 AND employee_id = $2 AND cycle_id = $3;
     `;
 
-    return this.query<any>(sql, [tenantContext.organizationId, employeeId, cycleId], executor);
+    const result = await this.query<any>(sql, [tenantContext.organizationId, employeeId, cycleId], executor);
+    return result.rows;
   }
 
   async findByCycle(
@@ -67,7 +68,8 @@ export class PerformanceAppraisalRepository extends BaseRepository {
       ORDER BY created_at DESC;
     `;
 
-    return this.query<any>(sql, [tenantContext.organizationId, cycleId], executor);
+    const result = await this.query<any>(sql, [tenantContext.organizationId, cycleId], executor);
+    return result.rows;
   }
 
   async findByStatus(
@@ -81,7 +83,8 @@ export class PerformanceAppraisalRepository extends BaseRepository {
       ORDER BY created_at DESC;
     `;
 
-    return this.query<any>(sql, [tenantContext.organizationId, status], executor);
+    const result = await this.query<any>(sql, [tenantContext.organizationId, status], executor);
+    return result.rows;
   }
 
   async findByEmployee(
@@ -95,7 +98,8 @@ export class PerformanceAppraisalRepository extends BaseRepository {
       ORDER BY created_at DESC;
     `;
 
-    return this.query<any>(sql, [tenantContext.organizationId, employeeId], executor);
+    const result = await this.query<any>(sql, [tenantContext.organizationId, employeeId], executor);
+    return result.rows;
   }
 
   async update(

@@ -47,7 +47,8 @@ export class AppraisalRatingRepository extends BaseRepository {
       ORDER BY q.question_order;
     `;
 
-    return this.query<any>(sql, [tenantContext.organizationId, appraisalId], executor);
+    const result = await this.query<any>(sql, [tenantContext.organizationId, appraisalId], executor);
+    return result.rows;
   }
 
   async findByAppraisalAndReviewer(
@@ -61,11 +62,12 @@ export class AppraisalRatingRepository extends BaseRepository {
       WHERE organization_id = $1 AND appraisal_id = $2 AND reviewer_id = $3;
     `;
 
-    return this.query<any>(
+    const result = await this.query<any>(
       sql,
       [tenantContext.organizationId, appraisalId, reviewerId],
       executor,
     );
+    return result.rows;
   }
 
   async getAverageRatingByReviewerType(

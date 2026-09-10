@@ -48,7 +48,8 @@ export class CompetencyRepository extends BaseRepository {
       ORDER BY name;
     `;
 
-    return this.query<any>(sql, [tenantContext.organizationId], executor);
+    const result = await this.query<any>(sql, [tenantContext.organizationId], executor);
+    return result.rows;
   }
 
   async findByCategory(
@@ -62,7 +63,8 @@ export class CompetencyRepository extends BaseRepository {
       ORDER BY name;
     `;
 
-    return this.query<any>(sql, [tenantContext.organizationId, category], executor);
+    const result = await this.query<any>(sql, [tenantContext.organizationId, category], executor);
+    return result.rows;
   }
 
   async update(

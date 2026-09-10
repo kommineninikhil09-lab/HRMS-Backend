@@ -47,7 +47,8 @@ export class PerformanceCycleRepository extends BaseRepository {
       ORDER BY start_date DESC;
     `;
 
-    return this.query<any>(sql, [tenantContext.organizationId], executor);
+    const result = await this.query<any>(sql, [tenantContext.organizationId], executor);
+    return result.rows;
   }
 
   async findByStatus(
@@ -61,7 +62,8 @@ export class PerformanceCycleRepository extends BaseRepository {
       ORDER BY start_date DESC;
     `;
 
-    return this.query<any>(sql, [tenantContext.organizationId, status], executor);
+    const result = await this.query<any>(sql, [tenantContext.organizationId, status], executor);
+    return result.rows;
   }
 
   async update(
