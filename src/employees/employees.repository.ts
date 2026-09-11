@@ -124,8 +124,22 @@ export class EmployeesRepository extends BaseRepository {
     return result.rows[0] as Employee | undefined;
   }
 
-  async findAll(tenantContext: TenantContext, filters?: { status?: string; department_id?: string }, executor?: Pool | PoolClient) {
-    let query = `SELECT * FROM employees WHERE organization_id = $1`;
+  async findAll(
+    tenantContext: TenantContext,
+    filters?: { status?: string; department_id?: string; scopedIds?: string[] | null },
+    executor?: Pool | PoolClient,
+  ) {
+    // Explicit column list — restricted fields (government ID numbers, bank
+    // details, salary, if/when this table or a related one grows them) must
+    // never come back from this endpoint; they belong behind a dedicated
+    // sensitive-fields endpoint gated by employee.sensitive.read instead.
+    let query = `
+      SELECT id, employee_code, first_name, last_name, work_email, phone,
+             department_id, team_id, location_id, designation_id, grade_id,
+             business_unit_id, manager_id, employment_type, date_of_joining, status
+      FROM employees
+      WHERE organization_id = $1
+    `;
     const values: any[] = [tenantContext.organizationId];
     let paramIndex = 2;
 
@@ -137,6 +151,11 @@ export class EmployeesRepository extends BaseRepository {
     if (filters?.department_id) {
       query += ` AND department_id = $${paramIndex}`;
       values.push(filters.department_id);
+      paramIndex++;
+    }
+    if (filters?.scopedIds) {
+      query += ` AND id = ANY($${paramIndex}::uuid[])`;
+      values.push(filters.scopedIds);
       paramIndex++;
     }
 
