@@ -1,4 +1,4 @@
-import { ForbiddenException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { LeaveService } from './leave.service';
 import { TenantContext, ORG_SCOPE, SELF_SCOPE } from '../database/tenant-context';
 
@@ -266,5 +266,106 @@ describe('LeaveService.getLeaveRequestById — resource-keyed authorization (P1-
     });
     await expect(service.getLeaveRequestById(ctx, 'request-1')).resolves.toEqual(request);
     expect(permissionsService.getEffectivePermissions).toHaveBeenCalledWith('org-1', 'manager-1');
+  });
+});
+
+/**
+ * P1-09 — the open question from the reconciled Tasks.md turned out to
+ * already be answered by the existing code, once actually traced.
+ * approveLeaveRequest does NOT use assertActingOnEmployee / manager_scopes
+ * at all - it gates on leaveRequest.approver_id, a value fixed at request
+ * creation time by resolveApproverUserId (src/common/approval/approval.util.ts),
+ * which walks employee.manager_id -> that manager's user_id. That's the
+ * direct line manager, full stop - no team/org scope concept involved, and
+ * therefore already narrower than manager_scopes-based team read access
+ * without any directOnly-style special case needed. The
+ * resolveFallbackApproverUserId path (used when an employee has no
+ * manager) deliberately requires scope.all, so even the fallback never
+ * hands approval to an out-of-scope team Admin.
+ *
+ * No code change - this is the acceptance-criteria evidence that the
+ * existing approver_id gate does what the open question was asking whether
+ * something needed to do.
+ */
+describe('LeaveService.approveLeaveRequest — assigned-approver gate, not scope (P1-09)', () => {
+  let leaveRequestsRepo: any;
+  let leaveBalanceRepo: any;
+  let auditService: any;
+  let transactionService: any;
+  let service: LeaveService;
+
+  const leaveRequest = {
+    id: 'request-1',
+    employee_id: 'target-employee-1',
+    leave_type_id: 'type-1',
+    duration_days: 2,
+    status: 'submitted',
+    approver_id: 'assigned-manager-user-1',
+  };
+
+  beforeEach(() => {
+    leaveRequestsRepo = {
+      findById: jest.fn().mockResolvedValue(leaveRequest),
+      update: jest.fn().mockResolvedValue({ ...leaveRequest, status: 'approved' }),
+    };
+    leaveBalanceRepo = {
+      findByEmployeeAndType: jest.fn().mockResolvedValue(null),
+    };
+    auditService = { record: jest.fn().mockResolvedValue(undefined) };
+    transactionService = { runInTransaction: jest.fn((cb: any) => cb({})) };
+    service = new LeaveService(
+      {} as any,
+      leaveRequestsRepo,
+      leaveBalanceRepo,
+      {} as any,
+      {} as any,
+      {} as any,
+      auditService,
+      transactionService,
+    );
+  });
+
+  it('throws NotFoundException before any approver check for a nonexistent request', async () => {
+    leaveRequestsRepo.findById.mockResolvedValueOnce(undefined);
+    await expect(
+      service.approveLeaveRequest(makeContext(), 'missing', 'assigned-manager-user-1', { approve: true } as any),
+    ).rejects.toThrow(NotFoundException);
+  });
+
+  it('the assigned approver can approve, with no scope on tenantContext at all', async () => {
+    const ctx = makeContext({ scope: undefined });
+    const result = await service.approveLeaveRequest(ctx, 'request-1', 'assigned-manager-user-1', {
+      approve: true,
+    } as any);
+    expect(result.status).toBe('approved');
+  });
+
+  it('a caller with org-wide scope who is NOT the assigned approver still 403s — scope never overrides the assignment', async () => {
+    const ctx = makeContext({ scope: ORG_SCOPE });
+    await expect(
+      service.approveLeaveRequest(ctx, 'request-1', 'someone-else-entirely', { approve: true } as any),
+    ).rejects.toThrow(ForbiddenException);
+    expect(leaveRequestsRepo.update).not.toHaveBeenCalled();
+  });
+
+  it('a caller whose team scope would cover the employee, but who isn\'t the assigned approver, still 403s', async () => {
+    // Proves this is genuinely independent of manager_scopes: being able to
+    // read/act on the employee under team scope elsewhere doesn't grant
+    // approval authority here.
+    const ctx = makeContext({
+      scope: { kind: 'team', employeeIds: new Set(['target-employee-1']) },
+    });
+    await expect(
+      service.approveLeaveRequest(ctx, 'request-1', 'some-other-manager', { approve: true } as any),
+    ).rejects.toThrow(ForbiddenException);
+  });
+
+  it('rejects a request that is not in "submitted" status, even for the correct approver', async () => {
+    leaveRequestsRepo.findById.mockResolvedValueOnce({ ...leaveRequest, status: 'approved' });
+    await expect(
+      service.approveLeaveRequest(makeContext(), 'request-1', 'assigned-manager-user-1', {
+        approve: true,
+      } as any),
+    ).rejects.toThrow(BadRequestException);
   });
 });
