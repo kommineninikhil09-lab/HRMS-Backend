@@ -14,6 +14,7 @@ import { PermissionsService } from '../permissions/permissions.service';
 import { TenantContext } from '../database/tenant-context';
 import { AuditService } from '../audit/audit.service';
 import { TransactionService } from '../database/transaction.service';
+import { EventsService } from '../common/events/events.service';
 import { getFinancialYear } from '../common/util/financial-year.util';
 import { parseIsoDate, toIsoDate } from '../common/util/date.util';
 import { assertActingOnEmployee } from '../common/scope/scope.util';
@@ -42,6 +43,7 @@ export class LeaveService {
     private readonly permissionsService: PermissionsService,
     private readonly auditService: AuditService,
     private readonly transactionService: TransactionService,
+    private readonly eventsService: EventsService,
   ) {}
 
   async createLeaveRequest(
@@ -208,6 +210,18 @@ export class LeaveService {
         client,
       );
 
+      return { leaveRequest, requiresApproval, approverUserId };
+    }).then(({ leaveRequest, requiresApproval, approverUserId }) => {
+      if (requiresApproval && approverUserId) {
+        const employeeName = [employee.first_name, employee.last_name].filter(Boolean).join(' ') || 'An employee';
+        this.eventsService.emitNotification({
+          organizationId: tenantContext.organizationId,
+          userId: approverUserId,
+          type: 'leave.needs_approval',
+          title: 'Leave request awaiting your approval',
+          body: `${employeeName} requested ${leaveRequest.duration_days} day(s) of leave (${leaveRequest.start_date} to ${leaveRequest.end_date}).`,
+        });
+      }
       return leaveRequest;
     });
   }
@@ -281,6 +295,26 @@ export class LeaveService {
         client,
       );
 
+      const requester = await this.employeesRepo.findById(
+        tenantContext,
+        leaveRequest.employee_id,
+        client,
+      );
+
+      return { updated, requesterUserId: requester?.user_id };
+    }).then(({ updated, requesterUserId }) => {
+      if (requesterUserId) {
+        const decided = updated.status === 'approved' ? 'approved' : 'rejected';
+        const reasonSuffix =
+          decided === 'rejected' && updated.rejection_reason ? ` Reason: ${updated.rejection_reason}` : '';
+        this.eventsService.emitNotification({
+          organizationId: tenantContext.organizationId,
+          userId: requesterUserId,
+          type: 'leave.decided',
+          title: `Your leave request was ${decided}`,
+          body: `${updated.start_date} to ${updated.end_date} (${updated.duration_days} day(s)).${reasonSuffix}`,
+        });
+      }
       return updated;
     });
   }

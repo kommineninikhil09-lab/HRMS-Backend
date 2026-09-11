@@ -9,6 +9,7 @@ import { AuditModule } from '../audit/audit.module';
 import { EmployeesModule } from '../employees/employees.module';
 import { HolidaysModule } from '../holidays/holidays.module';
 import { PermissionsModule } from '../permissions/permissions.module';
+import { EventsModule } from '../common/events/events.module';
 
 @Module({
   imports: [
@@ -17,6 +18,7 @@ import { PermissionsModule } from '../permissions/permissions.module';
     EmployeesModule,
     HolidaysModule,
     PermissionsModule,
+    EventsModule,
   ],
   controllers: [LeaveController],
   providers: [

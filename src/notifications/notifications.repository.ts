@@ -16,6 +16,23 @@ export interface Notification {
 
 @Injectable()
 export class NotificationsRepository extends BaseRepository {
+  async create(
+    organizationId: string,
+    userId: string,
+    type: string,
+    title: string,
+    body: string | undefined,
+    executor?: Pool | PoolClient,
+  ): Promise<Notification> {
+    return (await this.queryOne<Notification>(
+      `INSERT INTO notifications (organization_id, user_id, type, title, body)
+       VALUES ($1, $2, $3, $4, $5)
+       RETURNING *`,
+      [organizationId, userId, type, title, body ?? null],
+      executor,
+    )) as Notification;
+  }
+
   async findRecentForUser(
     tenantContext: TenantContext,
     limit: number,

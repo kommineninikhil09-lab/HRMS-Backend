@@ -9,6 +9,8 @@ import { SalaryAssignmentRepository } from './repositories/salary-assignment.rep
 import { StructureComponentRepository } from './repositories/structure-component.repository';
 import { SlipComponentRepository } from './repositories/slip-component.repository';
 import { assertActingOnEmployee, scopedEmployeeIds } from '../common/scope/scope.util';
+import { EmployeesRepository } from '../employees/employees.repository';
+import { EventsService } from '../common/events/events.service';
 
 export interface CreateSalaryStructureDTO {
   name: string;
@@ -34,6 +36,8 @@ export class PayrollService {
     private readonly slipComponentRepository: SlipComponentRepository,
     private readonly auditService: AuditService,
     private readonly transactionService: TransactionService,
+    private readonly employeesRepository: EmployeesRepository,
+    private readonly eventsService: EventsService,
   ) {}
 
   // Salary Structure Operations
@@ -377,6 +381,18 @@ export class PayrollService {
         client,
       );
 
+      return updatedSlip;
+    }).then(async (updatedSlip) => {
+      const employee = await this.employeesRepository.findById(tenantContext, employeeId);
+      if (employee?.user_id) {
+        this.eventsService.emitNotification({
+          organizationId: tenantContext.organizationId,
+          userId: employee.user_id,
+          type: 'payslip.generated',
+          title: 'Your payslip is ready',
+          body: `Your ${month} payslip is now available.`,
+        });
+      }
       return updatedSlip;
     });
   }

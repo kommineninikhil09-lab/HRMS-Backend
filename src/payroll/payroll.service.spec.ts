@@ -308,6 +308,8 @@ describe('PayrollService.generateSalarySlip — amount computation and persisten
   let slipComponentRepository: any;
   let auditService: any;
   let transactionService: any;
+  let employeesRepository: any;
+  let eventsService: any;
   let service: PayrollService;
 
   beforeEach(() => {
@@ -329,6 +331,8 @@ describe('PayrollService.generateSalarySlip — amount computation and persisten
     };
     auditService = { record: jest.fn().mockResolvedValue(undefined) };
     transactionService = { runInTransaction: jest.fn((cb: any) => cb({})) };
+    employeesRepository = { findById: jest.fn().mockResolvedValue({ id: 'employee-1', user_id: 'user-1' }) };
+    eventsService = { emitNotification: jest.fn() };
     service = new PayrollService(
       {} as any,
       {} as any,
@@ -338,6 +342,8 @@ describe('PayrollService.generateSalarySlip — amount computation and persisten
       slipComponentRepository,
       auditService,
       transactionService,
+      employeesRepository,
+      eventsService,
     );
   });
 
@@ -358,5 +364,16 @@ describe('PayrollService.generateSalarySlip — amount computation and persisten
     expect(result.gross_amount).toBe(5000);
     expect(result.total_deductions).toBe(1200.5);
     expect(result.net_amount).toBe(3799.5);
+    expect(eventsService.emitNotification).toHaveBeenCalledWith(
+      expect.objectContaining({ userId: 'user-1', type: 'payslip.generated' }),
+    );
+  });
+
+  it('does not emit a notification when the employee has no linked user account', async () => {
+    employeesRepository.findById.mockResolvedValue({ id: 'employee-1', user_id: null });
+
+    await service.generateSalarySlip(makeContext({ scope: ORG_SCOPE }), 'employee-1', '2026-01', 'cycle-1');
+
+    expect(eventsService.emitNotification).not.toHaveBeenCalled();
   });
 });
