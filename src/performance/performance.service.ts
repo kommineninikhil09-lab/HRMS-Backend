@@ -8,6 +8,7 @@ import { PerformanceAppraisalRepository } from './repositories/performance-appra
 import { AppraisalRatingRepository } from './repositories/appraisal-rating.repository';
 import { CompetencyRepository } from './repositories/competency.repository';
 import { PerformanceGoalRepository } from './repositories/performance-goal.repository';
+import { assertActingOnEmployee, scopedEmployeeIds } from '../common/scope/scope.util';
 
 @Injectable()
 export class PerformanceService {
@@ -163,14 +164,18 @@ export class PerformanceService {
   }
 
   async getAppraisals(tenantContext: TenantContext, filters?: any) {
+    if (filters?.employee_id) {
+      assertActingOnEmployee(tenantContext, filters.employee_id);
+      return this.appraisalRepository.findByEmployee(tenantContext, filters.employee_id);
+    }
+
+    const scopedIds = scopedEmployeeIds(tenantContext);
+
     if (filters?.cycle_id) {
-      return this.appraisalRepository.findByCycle(tenantContext, filters.cycle_id);
+      return this.appraisalRepository.findByCycle(tenantContext, filters.cycle_id, scopedIds);
     }
     if (filters?.status) {
-      return this.appraisalRepository.findByStatus(tenantContext, filters.status);
-    }
-    if (filters?.employee_id) {
-      return this.appraisalRepository.findByEmployee(tenantContext, filters.employee_id);
+      return this.appraisalRepository.findByStatus(tenantContext, filters.status, scopedIds);
     }
     return [];
   }
