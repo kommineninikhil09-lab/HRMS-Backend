@@ -188,3 +188,89 @@ describe('PerformanceService.getAppraisals — scope-filtering the list (P1-16)'
     expect(appraisalRepository.findByStatus).not.toHaveBeenCalled();
   });
 });
+
+/**
+ * P1-17 — unlike P1-09's leave-approval question, this one turned out to be
+ * a real, live gap rather than an already-solved design. reviewAppraisal
+ * had no scope check at all (not even the standard assertActingOnEmployee
+ * every other employee-keyed route in this module uses) - performance.review
+ * is granted to Admin, whose scope depends entirely on their manager_scopes
+ * assignment, so any Admin holding it could review any employee's appraisal
+ * org-wide. finalizeAppraisal had the identical gap, found alongside while
+ * checking review. Both now use the same standard check as
+ * getAppraisal/createGoal/getEmployeeGoals - no directOnly-style narrowing,
+ * since main's {kind:'team'} scope has no recursive-subtree concept to be
+ * broad or narrow about in the first place.
+ */
+describe('PerformanceService — review/finalize scope-gating (P1-17)', () => {
+  let appraisalRepository: any;
+  let service: PerformanceService;
+
+  const appraisal = {
+    id: 'appraisal-1',
+    employeeId: 'target-employee-1',
+    status: 'submitted',
+  };
+
+  let auditService: any;
+
+  beforeEach(() => {
+    appraisalRepository = {
+      findById: jest.fn().mockResolvedValue(appraisal),
+      update: jest.fn((_tc: any, _id: string, patch: any) => Promise.resolve({ ...appraisal, ...patch })),
+    };
+    auditService = { record: jest.fn().mockResolvedValue(undefined) };
+    service = new PerformanceService(
+      {} as any,
+      {} as any,
+      appraisalRepository,
+      {} as any,
+      {} as any,
+      {} as any,
+      auditService,
+      {} as any,
+    );
+  });
+
+  describe('reviewAppraisal', () => {
+    it('throws NotFoundException before any scope check for a nonexistent appraisal', async () => {
+      appraisalRepository.findById.mockResolvedValueOnce(undefined);
+      await expect(
+        service.reviewAppraisal(makeContext({ scope: ORG_SCOPE }), 'missing', {}),
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it('team scope: succeeds for an in-scope target, 403s for an out-of-scope one', async () => {
+      const ctxIn = makeContext({ scope: { kind: 'team', employeeIds: new Set(['target-employee-1']) } });
+      await expect(service.reviewAppraisal(ctxIn, 'appraisal-1', {})).resolves.toBeDefined();
+
+      const ctxOut = makeContext({ scope: { kind: 'team', employeeIds: new Set(['someone-else']) } });
+      await expect(service.reviewAppraisal(ctxOut, 'appraisal-1', {})).rejects.toThrow(
+        ForbiddenException,
+      );
+    });
+
+    it('org scope: succeeds regardless of whose appraisal it is', async () => {
+      const ctx = makeContext({ scope: ORG_SCOPE });
+      await expect(service.reviewAppraisal(ctx, 'appraisal-1', {})).resolves.toBeDefined();
+    });
+  });
+
+  describe('finalizeAppraisal', () => {
+    const reviewedAppraisal = { ...appraisal, status: 'reviewed' };
+
+    beforeEach(() => {
+      appraisalRepository.findById.mockResolvedValue(reviewedAppraisal);
+    });
+
+    it('team scope: succeeds for an in-scope target, 403s for an out-of-scope one', async () => {
+      const ctxIn = makeContext({ scope: { kind: 'team', employeeIds: new Set(['target-employee-1']) } });
+      await expect(service.finalizeAppraisal(ctxIn, 'appraisal-1')).resolves.toBeDefined();
+
+      const ctxOut = makeContext({ scope: { kind: 'team', employeeIds: new Set(['someone-else']) } });
+      await expect(service.finalizeAppraisal(ctxOut, 'appraisal-1')).rejects.toThrow(
+        ForbiddenException,
+      );
+    });
+  });
+});
