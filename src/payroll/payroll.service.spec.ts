@@ -18,8 +18,10 @@ describe('PayrollService — approve/mark-paid locked to org scope (P1-13)', () 
   let auditService: any;
   let service: PayrollService;
 
-  const draftSlip = { id: 'slip-1', employee_id: 'target-employee-1', status: 'draft' };
-  const approvedSlip = { id: 'slip-1', employee_id: 'target-employee-1', status: 'approved' };
+  // employeeId, not employee_id: SalarySlipRepository goes through
+  // BaseRepository.query/queryOne, which camelCases every row.
+  const draftSlip = { id: 'slip-1', employeeId: 'target-employee-1', status: 'draft' };
+  const approvedSlip = { id: 'slip-1', employeeId: 'target-employee-1', status: 'approved' };
 
   beforeEach(() => {
     salarySlipRepository = {
@@ -158,7 +160,8 @@ describe('PayrollService — resource-keyed slip routes (P1-12)', () => {
   let slipComponentRepository: any;
   let service: PayrollService;
 
-  const slip = { id: 'slip-1', employee_id: 'target-employee-1', status: 'draft' };
+  // employeeId, not employee_id — see the comment on draftSlip above.
+  const slip = { id: 'slip-1', employeeId: 'target-employee-1', status: 'draft' };
 
   beforeEach(() => {
     salarySlipRepository = { findById: jest.fn().mockResolvedValue(slip) };

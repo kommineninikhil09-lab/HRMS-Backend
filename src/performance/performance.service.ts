@@ -185,7 +185,10 @@ export class PerformanceService {
     if (!appraisal) {
       throw new NotFoundException('Performance appraisal not found');
     }
-    assertActingOnEmployee(tenantContext, appraisal.employee_id);
+    // PerformanceAppraisalRepository goes through BaseRepository.queryOne,
+    // which camelCases every row (see database/case-mapper.util.ts) - the
+    // real field here is employeeId, not employee_id.
+    assertActingOnEmployee(tenantContext, appraisal.employeeId);
     return appraisal;
   }
 
