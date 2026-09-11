@@ -20,7 +20,7 @@ import { ScopeService } from '../common/scope/scope.service';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { PermissionsGuard } from '../common/guards/permissions.guard';
 import { RequirePermissions } from '../common/decorators/require-permissions.decorator';
-import { TenantContext } from '../database/tenant-context';
+import { TenantContext, ManagementScope } from '../database/tenant-context';
 import { UpdateMeDto } from './dto/update-me.dto';
 import {
   AssignRoleDto,
@@ -32,6 +32,10 @@ import {
 // swapped in here later without touching the handlers.
 const SCOPE_ADMIN_PERMISSION = 'role.assign';
 
+// employeeIds serializes as an array, not the Set ManagementScope carries at
+// runtime - Sets don't survive JSON.
+type SerializedScope = { kind: 'org' } | { kind: 'team'; employeeIds: string[] } | { kind: 'self' };
+
 interface UserWithPermissions {
   id: string;
   email: string;
@@ -39,6 +43,13 @@ interface UserWithPermissions {
   lastName: string | null;
   roles: { id: string; name: string }[];
   permissions: string[];
+}
+
+// GET /me only - scope is the resolved value for the current request's
+// caller, not a property of an arbitrary user record the way the admin
+// user-detail routes below return UserWithPermissions.
+interface CurrentUserResponse extends UserWithPermissions {
+  scope: SerializedScope;
 }
 
 interface CreateUserDto {
@@ -54,6 +65,19 @@ interface UpdateUserDto {
   status?: 'active' | 'inactive';
 }
 
+// undefined means "no scope resolved for this request" (not expected on an
+// authenticated route, but TenantContext.scope is optional) - treated the
+// same as ManagementScope's own fail-closed default.
+function serializeScope(scope: ManagementScope | undefined): SerializedScope {
+  if (!scope || scope.kind === 'self') {
+    return { kind: 'self' };
+  }
+  if (scope.kind === 'team') {
+    return { kind: 'team', employeeIds: Array.from(scope.employeeIds) };
+  }
+  return { kind: 'org' };
+}
+
 @Controller('users')
 @UseGuards(JwtAuthGuard, PermissionsGuard)
 export class UsersController {
@@ -66,7 +90,7 @@ export class UsersController {
   // ---- self-service (any authenticated user) ----
 
   @Get('/me')
-  async getCurrentUser(@Request() req: any): Promise<UserWithPermissions> {
+  async getCurrentUser(@Request() req: any): Promise<CurrentUserResponse> {
     const tenantContext: TenantContext = req.tenantContext;
 
     const user = await this.usersService.getUserById(
@@ -91,6 +115,7 @@ export class UsersController {
       lastName: user.lastName,
       roles,
       permissions,
+      scope: serializeScope(tenantContext.scope),
     };
   }
 
