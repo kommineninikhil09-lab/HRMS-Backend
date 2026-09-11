@@ -376,6 +376,8 @@ export class PerformanceService {
 
   // Performance Goals
   async createGoal(tenantContext: TenantContext, dto: any) {
+    assertActingOnEmployee(tenantContext, dto.employee_id);
+
     const goal = await this.goalRepository.create(tenantContext, {
       employee_id: dto.employee_id,
       cycle_id: dto.cycle_id,
@@ -421,6 +423,7 @@ export class PerformanceService {
   }
 
   async getEmployeeGoals(tenantContext: TenantContext, employeeId: string) {
+    assertActingOnEmployee(tenantContext, employeeId);
     return this.goalRepository.findByEmployee(tenantContext, employeeId);
   }
 
