@@ -37,6 +37,7 @@ import { ESSModule } from './ess/ess.module';
 import { PayrollModule } from './payroll/payroll.module';
 import { PerformanceModule } from './performance/performance.module';
 import { CommunityModule } from './community/community.module';
+import { NotificationsModule } from './notifications/notifications.module';
 
 @Module({
   imports: [
@@ -69,6 +70,7 @@ import { CommunityModule } from './community/community.module';
     PayrollModule,
     PerformanceModule,
     CommunityModule,
+    NotificationsModule,
   ],
   controllers: [HealthController],
   providers: [
