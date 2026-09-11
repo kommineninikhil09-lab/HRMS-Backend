@@ -154,7 +154,9 @@ describe('Authorization scope matrix (E2E)', () => {
         AND p.code IN (
           'payroll.read', 'payroll.write', 'payroll.process', 'payroll.approve',
           'performance.read', 'performance.write', 'performance.cycles', 'performance.templates',
-          'audit.read'
+          'performance.goals.read', 'performance.goals.write',
+          'audit.read',
+          'announcement.update', 'post.delete', 'organization_structure.write'
         )
       ON CONFLICT (role_id, permission_id) DO NOTHING;
     `);
@@ -247,6 +249,17 @@ describe('Authorization scope matrix (E2E)', () => {
         .expect(403);
     });
 
+    it('self scope: reaches your own balance, 403s on anyone else (P1-22)', async () => {
+      await request(http)
+        .get(`/api/v1/leave/balance/employee/${inScopeEmployeeId}`)
+        .set('Authorization', `Bearer ${selfToken}`)
+        .expect(200);
+      await request(http)
+        .get(`/api/v1/leave/balance/employee/${outOfScopeEmployeeId}`)
+        .set('Authorization', `Bearer ${selfToken}`)
+        .expect(403);
+    });
+
     it('org scope: succeeds for any target', async () => {
       await request(http)
         .get(`/api/v1/leave/balance/employee/${outOfScopeEmployeeId}`)
@@ -273,6 +286,20 @@ describe('Authorization scope matrix (E2E)', () => {
         .set('Authorization', `Bearer ${selfToken}`)
         .expect(200);
     });
+
+    it('self scope: 403s on anyone else (P1-22)', async () => {
+      await request(http)
+        .get(`/api/v1/leave/employee/${outOfScopeEmployeeId}/requests`)
+        .set('Authorization', `Bearer ${selfToken}`)
+        .expect(403);
+    });
+
+    it('org scope: succeeds for any target (P1-22)', async () => {
+      await request(http)
+        .get(`/api/v1/leave/employee/${outOfScopeEmployeeId}/requests`)
+        .set('Authorization', `Bearer ${orgToken}`)
+        .expect(200);
+    });
   });
 
   // ---------------------------------------------------------------------
@@ -292,6 +319,24 @@ describe('Authorization scope matrix (E2E)', () => {
         .get(`/api/v1/employees/${outOfScopeEmployeeId}`)
         .set('Authorization', `Bearer ${teamToken}`)
         .expect(403);
+    });
+
+    it('self scope: reaches your own record, 403s on anyone else (P1-22)', async () => {
+      await request(http)
+        .get(`/api/v1/employees/${inScopeEmployeeId}`)
+        .set('Authorization', `Bearer ${selfToken}`)
+        .expect(200);
+      await request(http)
+        .get(`/api/v1/employees/${outOfScopeEmployeeId}`)
+        .set('Authorization', `Bearer ${selfToken}`)
+        .expect(403);
+    });
+
+    it('org scope: reaches any target (P1-22)', async () => {
+      await request(http)
+        .get(`/api/v1/employees/${outOfScopeEmployeeId}`)
+        .set('Authorization', `Bearer ${orgToken}`)
+        .expect(200);
     });
   });
 
@@ -429,6 +474,160 @@ describe('Authorization scope matrix (E2E)', () => {
     });
   });
 
+  describe('Payroll — assignStructureToEmployee scope-gating (P1-22, today\'s fix)', () => {
+    let structureId: string;
+
+    beforeAll(async () => {
+      const structureRes = await request(http)
+        .post('/api/v1/payroll/structures')
+        .set('Authorization', `Bearer ${orgToken}`)
+        .send({ name: `P1-22 Assign Structure ${Date.now()}`, code: `P22AS${Date.now()}` });
+      if (structureRes.status !== 201) {
+        throw new Error(`salary structure create failed: ${structureRes.status} ${JSON.stringify(structureRes.body)}`);
+      }
+      structureId = structureRes.body.data.id as string;
+    });
+
+    it('team scope: assigning to the in-scope employee succeeds, the out-of-scope one 403s', async () => {
+      await request(http)
+        .post('/api/v1/payroll/assignments')
+        .set('Authorization', `Bearer ${teamToken}`)
+        .send({ employee_id: inScopeEmployeeId, structure_id: structureId, effective_date: '2030-01-01' })
+        .expect(201);
+
+      await request(http)
+        .post('/api/v1/payroll/assignments')
+        .set('Authorization', `Bearer ${teamToken}`)
+        .send({ employee_id: outOfScopeEmployeeId, structure_id: structureId, effective_date: '2030-01-01' })
+        .expect(403);
+    });
+
+    it('org scope: succeeds for any target', async () => {
+      await request(http)
+        .post('/api/v1/payroll/assignments')
+        .set('Authorization', `Bearer ${orgToken}`)
+        .send({ employee_id: outOfScopeEmployeeId, structure_id: structureId, effective_date: '2030-01-02' })
+        .expect(201);
+    });
+  });
+
+  describe('Payroll — pending/approved slip listing scope-filtering (P1-22, today\'s fix)', () => {
+    let inScopeSlipId: string;
+    let outOfScopeSlipId: string;
+
+    beforeAll(async () => {
+      const structureRes = await request(http)
+        .post('/api/v1/payroll/structures')
+        .set('Authorization', `Bearer ${orgToken}`)
+        .send({ name: `P1-22 Listing Structure ${Date.now()}`, code: `P22LS${Date.now()}` });
+      if (structureRes.status !== 201) {
+        throw new Error(`salary structure create failed: ${structureRes.status} ${JSON.stringify(structureRes.body)}`);
+      }
+      const structureId = structureRes.body.data.id as string;
+
+      const componentRes = await request(http)
+        .post('/api/v1/payroll/components')
+        .set('Authorization', `Bearer ${orgToken}`)
+        .send({ name: 'P1-22 Base Pay', code: `P22BASE${Date.now()}`, component_type: 'earnings' });
+      if (componentRes.status !== 201) {
+        throw new Error(`salary component create failed: ${componentRes.status} ${JSON.stringify(componentRes.body)}`);
+      }
+      const componentId = componentRes.body.data.id as string;
+
+      // No HTTP endpoint attaches a component to a structure or creates a pay
+      // cycle — same gap and same direct-insert workaround as the P1-13
+      // fixture above.
+      const orgRow3 = await pool.query(`SELECT id FROM organizations LIMIT 1`);
+      const organizationId3 = orgRow3.rows[0].id as string;
+      await pool.query(
+        `INSERT INTO structure_components (organization_id, structure_id, component_id, amount, is_active)
+         VALUES ($1, $2, $3, $4, true)`,
+        [organizationId3, structureId, componentId, 60000],
+      );
+      const payCycleInsert = await pool.query(
+        `INSERT INTO pay_cycles (organization_id, name, code, frequency, start_date)
+         VALUES ($1, $2, $3, 'monthly', $4) RETURNING id`,
+        [organizationId3, `P1-22 Pay Cycle ${Date.now()}`, `P22PC${Date.now()}`, '2030-03-01'],
+      );
+      const payCycleId = payCycleInsert.rows[0].id as string;
+
+      for (const employeeId of [inScopeEmployeeId, outOfScopeEmployeeId]) {
+        const assignRes = await request(http)
+          .post('/api/v1/payroll/assignments')
+          .set('Authorization', `Bearer ${orgToken}`)
+          .send({ employee_id: employeeId, structure_id: structureId, effective_date: new Date().toISOString().slice(0, 10) });
+        if (assignRes.status !== 201) {
+          throw new Error(`salary assignment create failed: ${assignRes.status} ${JSON.stringify(assignRes.body)}`);
+        }
+      }
+
+      const inScopeSlipRes = await request(http)
+        .post('/api/v1/payroll/slips/generate')
+        .set('Authorization', `Bearer ${orgToken}`)
+        .send({ employee_id: inScopeEmployeeId, month: '2030-03', pay_cycle_id: payCycleId });
+      if (inScopeSlipRes.status !== 201) {
+        throw new Error(`slip generate failed: ${inScopeSlipRes.status} ${JSON.stringify(inScopeSlipRes.body)}`);
+      }
+      inScopeSlipId = inScopeSlipRes.body.data.id as string;
+
+      const outOfScopeSlipRes = await request(http)
+        .post('/api/v1/payroll/slips/generate')
+        .set('Authorization', `Bearer ${orgToken}`)
+        .send({ employee_id: outOfScopeEmployeeId, month: '2030-03', pay_cycle_id: payCycleId });
+      if (outOfScopeSlipRes.status !== 201) {
+        throw new Error(`slip generate failed: ${outOfScopeSlipRes.status} ${JSON.stringify(outOfScopeSlipRes.body)}`);
+      }
+      outOfScopeSlipId = outOfScopeSlipRes.body.data.id as string;
+    });
+
+    it('getPendingApprovals: team scope sees only the in-scope employee\'s draft slip', async () => {
+      const res = await request(http)
+        .get('/api/v1/payroll/slips/pending/approvals')
+        .set('Authorization', `Bearer ${teamToken}`)
+        .expect(200);
+      const ids = (res.body.data ?? []).map((s: any) => s.id);
+      expect(ids).toContain(inScopeSlipId);
+      expect(ids).not.toContain(outOfScopeSlipId);
+    });
+
+    it('getPendingApprovals: org scope sees both', async () => {
+      const res = await request(http)
+        .get('/api/v1/payroll/slips/pending/approvals')
+        .set('Authorization', `Bearer ${orgToken}`)
+        .expect(200);
+      const ids = (res.body.data ?? []).map((s: any) => s.id);
+      expect(ids).toContain(inScopeSlipId);
+      expect(ids).toContain(outOfScopeSlipId);
+    });
+
+    it('getApprovedSlips: team scope is filtered the same way once both are approved', async () => {
+      await request(http)
+        .put(`/api/v1/payroll/slips/${inScopeSlipId}/approve`)
+        .set('Authorization', `Bearer ${orgToken}`)
+        .expect(200);
+      await request(http)
+        .put(`/api/v1/payroll/slips/${outOfScopeSlipId}/approve`)
+        .set('Authorization', `Bearer ${orgToken}`)
+        .expect(200);
+
+      const teamRes = await request(http)
+        .get('/api/v1/payroll/slips/approved/list')
+        .set('Authorization', `Bearer ${teamToken}`)
+        .expect(200);
+      const teamIds = (teamRes.body.data ?? []).map((s: any) => s.id);
+      expect(teamIds).toContain(inScopeSlipId);
+      expect(teamIds).not.toContain(outOfScopeSlipId);
+
+      const orgRes = await request(http)
+        .get('/api/v1/payroll/slips/approved/list')
+        .set('Authorization', `Bearer ${orgToken}`)
+        .expect(200);
+      const orgIds = (orgRes.body.data ?? []).map((s: any) => s.id);
+      expect(orgIds).toContain(inScopeSlipId);
+      expect(orgIds).toContain(outOfScopeSlipId);
+    });
+  });
+
   describe('Performance — resource-keyed appraisal + goals (P1-14, P1-15, P1-16)', () => {
     let appraisalId: string;
 
@@ -489,6 +688,291 @@ describe('Authorization scope matrix (E2E)', () => {
         .set('Authorization', `Bearer ${teamToken}`)
         .send({ employee_id: outOfScopeEmployeeId, goal_title: 'Should be blocked' })
         .expect(403);
+    });
+  });
+
+  describe('Performance — createAppraisal scope-gating (P1-22, today\'s fix)', () => {
+    let cycleId: string;
+    let templateId: string;
+
+    beforeAll(async () => {
+      const cycleRes = await request(http)
+        .post('/api/v1/performance/cycles')
+        .set('Authorization', `Bearer ${orgToken}`)
+        .send({
+          name: `P1-22 Create-Appraisal Cycle ${Date.now()}`,
+          cycle_type: 'annual',
+          start_date: '2030-01-01',
+          end_date: '2030-12-31',
+        });
+      if (cycleRes.status !== 201) {
+        throw new Error(`cycle create failed: ${cycleRes.status} ${JSON.stringify(cycleRes.body)}`);
+      }
+      cycleId = cycleRes.body.data.id as string;
+
+      const templateRes = await request(http)
+        .post('/api/v1/performance/templates')
+        .set('Authorization', `Bearer ${orgToken}`)
+        .send({
+          name: `P1-22 Create-Appraisal Template ${Date.now()}`,
+          description: 'P1-22 fixture',
+          template_type: 'annual',
+          rating_scale: '1-5',
+        });
+      if (templateRes.status !== 201) {
+        throw new Error(`template create failed: ${templateRes.status} ${JSON.stringify(templateRes.body)}`);
+      }
+      templateId = templateRes.body.data.id as string;
+    });
+
+    // appraisal_type varies per case to dodge the
+    // uq_performance_appraisals(organization_id, cycle_id, employee_id,
+    // appraisal_type) constraint across the multiple successful creates
+    // below for the same employee/cycle pair.
+
+    it('self scope: 403s even for your own id — Employee role holds no performance.write grant', async () => {
+      // Unlike createGoal, this isn't a self-service action: performance.write
+      // ("create and edit appraisals and templates") is an administrative
+      // permission the Employee role never holds by default, so self-scope
+      // callers never reach the scope check at all here — same shape as the
+      // Employees sensitive-fields case above.
+      await request(http)
+        .post('/api/v1/performance/appraisals')
+        .set('Authorization', `Bearer ${selfToken}`)
+        .send({ cycle_id: cycleId, template_id: templateId, employee_id: inScopeEmployeeId, appraisal_type: 'self-case' })
+        .expect(403);
+    });
+
+    it('team scope: succeeds for the in-scope target, 403s for the out-of-scope one', async () => {
+      await request(http)
+        .post('/api/v1/performance/appraisals')
+        .set('Authorization', `Bearer ${teamToken}`)
+        .send({ cycle_id: cycleId, template_id: templateId, employee_id: inScopeEmployeeId, appraisal_type: 'team-case' })
+        .expect(201);
+
+      await request(http)
+        .post('/api/v1/performance/appraisals')
+        .set('Authorization', `Bearer ${teamToken}`)
+        .send({ cycle_id: cycleId, template_id: templateId, employee_id: outOfScopeEmployeeId, appraisal_type: 'team-case' })
+        .expect(403);
+    });
+
+    it('org scope: succeeds for any target', async () => {
+      await request(http)
+        .post('/api/v1/performance/appraisals')
+        .set('Authorization', `Bearer ${orgToken}`)
+        .send({ cycle_id: cycleId, template_id: templateId, employee_id: outOfScopeEmployeeId, appraisal_type: 'org-case' })
+        .expect(201);
+    });
+  });
+
+  describe('Performance — updateGoal scope-gating (P1-22, today\'s fix)', () => {
+    let inScopeGoalId: string;
+    let outOfScopeGoalId: string;
+
+    beforeAll(async () => {
+      const inScopeGoalRes = await request(http)
+        .post('/api/v1/performance/goals')
+        .set('Authorization', `Bearer ${orgToken}`)
+        .send({ employee_id: inScopeEmployeeId, goal_title: 'P1-22 in-scope goal', goal_category: 'individual' });
+      if (inScopeGoalRes.status !== 201) {
+        throw new Error(`goal create failed: ${inScopeGoalRes.status} ${JSON.stringify(inScopeGoalRes.body)}`);
+      }
+      inScopeGoalId = inScopeGoalRes.body.data.id as string;
+
+      const outOfScopeGoalRes = await request(http)
+        .post('/api/v1/performance/goals')
+        .set('Authorization', `Bearer ${orgToken}`)
+        .send({ employee_id: outOfScopeEmployeeId, goal_title: 'P1-22 out-of-scope goal', goal_category: 'individual' });
+      if (outOfScopeGoalRes.status !== 201) {
+        throw new Error(`goal create failed: ${outOfScopeGoalRes.status} ${JSON.stringify(outOfScopeGoalRes.body)}`);
+      }
+      outOfScopeGoalId = outOfScopeGoalRes.body.data.id as string;
+    });
+
+    it('team scope: updating the in-scope employee\'s goal succeeds, the out-of-scope one 403s', async () => {
+      await request(http)
+        .put(`/api/v1/performance/goals/${inScopeGoalId}`)
+        .set('Authorization', `Bearer ${teamToken}`)
+        .send({ goal_title: 'Updated by team scope' })
+        .expect(200);
+
+      await request(http)
+        .put(`/api/v1/performance/goals/${outOfScopeGoalId}`)
+        .set('Authorization', `Bearer ${teamToken}`)
+        .send({ goal_title: 'Should be blocked' })
+        .expect(403);
+    });
+
+    it('org scope: succeeds regardless of whose goal it is', async () => {
+      await request(http)
+        .put(`/api/v1/performance/goals/${outOfScopeGoalId}`)
+        .set('Authorization', `Bearer ${orgToken}`)
+        .send({ goal_title: 'Updated by org scope' })
+        .expect(200);
+    });
+  });
+
+  describe('Performance — submitAppraisal scope-gating (P1-22, today\'s fix)', () => {
+    let cycleId: string;
+    let templateId: string;
+
+    async function createDraftAppraisal(employeeId: string, appraisalType: string): Promise<string> {
+      const res = await request(http)
+        .post('/api/v1/performance/appraisals')
+        .set('Authorization', `Bearer ${orgToken}`)
+        .send({ cycle_id: cycleId, template_id: templateId, employee_id: employeeId, appraisal_type: appraisalType });
+      if (res.status !== 201) {
+        throw new Error(`appraisal create failed: ${res.status} ${JSON.stringify(res.body)}`);
+      }
+      return res.body.data.id as string;
+    }
+
+    beforeAll(async () => {
+      const cycleRes = await request(http)
+        .post('/api/v1/performance/cycles')
+        .set('Authorization', `Bearer ${orgToken}`)
+        .send({
+          name: `P1-22 Submit-Appraisal Cycle ${Date.now()}`,
+          cycle_type: 'annual',
+          start_date: '2030-01-01',
+          end_date: '2030-12-31',
+        });
+      if (cycleRes.status !== 201) {
+        throw new Error(`cycle create failed: ${cycleRes.status} ${JSON.stringify(cycleRes.body)}`);
+      }
+      cycleId = cycleRes.body.data.id as string;
+
+      const templateRes = await request(http)
+        .post('/api/v1/performance/templates')
+        .set('Authorization', `Bearer ${orgToken}`)
+        .send({
+          name: `P1-22 Submit-Appraisal Template ${Date.now()}`,
+          description: 'P1-22 fixture',
+          template_type: 'annual',
+          rating_scale: '1-5',
+        });
+      if (templateRes.status !== 201) {
+        throw new Error(`template create failed: ${templateRes.status} ${JSON.stringify(templateRes.body)}`);
+      }
+      templateId = templateRes.body.data.id as string;
+    });
+
+    it('team scope: submitting the in-scope employee\'s appraisal succeeds, the out-of-scope one 403s', async () => {
+      const inScopeAppraisalId = await createDraftAppraisal(inScopeEmployeeId, 'submit-team-in');
+      const outOfScopeAppraisalId = await createDraftAppraisal(outOfScopeEmployeeId, 'submit-team-out');
+
+      await request(http)
+        .put(`/api/v1/performance/appraisals/${inScopeAppraisalId}/submit`)
+        .set('Authorization', `Bearer ${teamToken}`)
+        .expect(200);
+
+      await request(http)
+        .put(`/api/v1/performance/appraisals/${outOfScopeAppraisalId}/submit`)
+        .set('Authorization', `Bearer ${teamToken}`)
+        .expect(403);
+    });
+
+    it('org scope: succeeds regardless of whose appraisal it is', async () => {
+      const appraisalId = await createDraftAppraisal(outOfScopeEmployeeId, 'submit-org');
+
+      await request(http)
+        .put(`/api/v1/performance/appraisals/${appraisalId}/submit`)
+        .set('Authorization', `Bearer ${orgToken}`)
+        .expect(200);
+    });
+  });
+
+  describe('Community — publishAnnouncement locked to org scope', () => {
+    async function createDraftAnnouncement(): Promise<string> {
+      const res = await request(http)
+        .post('/api/v1/community/announcements')
+        .set('Authorization', `Bearer ${orgToken}`)
+        .send({ title: `P1-22 announcement ${Date.now()}`, content: 'P1-22 fixture content' });
+      if (res.status !== 201) {
+        throw new Error(`announcement create failed: ${res.status} ${JSON.stringify(res.body)}`);
+      }
+      return res.body.data.id as string;
+    }
+
+    it('team scope with announcement.update still 403s — org-only regardless of target', async () => {
+      const announcementId = await createDraftAnnouncement();
+      await request(http)
+        .post(`/api/v1/community/announcements/${announcementId}/publish`)
+        .set('Authorization', `Bearer ${teamToken}`)
+        .expect(403);
+    });
+
+    it('org scope: publishes successfully', async () => {
+      const announcementId = await createDraftAnnouncement();
+      await request(http)
+        .post(`/api/v1/community/announcements/${announcementId}/publish`)
+        .set('Authorization', `Bearer ${orgToken}`)
+        // No @HttpCode override on this route, so Nest defaults a POST to 201.
+        .expect(201);
+    });
+  });
+
+  describe('Community — deletePost: ownership OR org-scope moderator, not management scope', () => {
+    async function createPostAsOrgUser(): Promise<string> {
+      const res = await request(http)
+        .post('/api/v1/community/posts')
+        .set('Authorization', `Bearer ${orgToken}`)
+        .send({ content: `P1-22 post ${Date.now()}` });
+      if (res.status !== 201) {
+        throw new Error(`post create failed: ${res.status} ${JSON.stringify(res.body)}`);
+      }
+      return res.body.data.id as string;
+    }
+
+    it('team scope, not the author: 403s even with post.delete granted', async () => {
+      const postId = await createPostAsOrgUser();
+      await request(http)
+        .delete(`/api/v1/community/posts/${postId}`)
+        .set('Authorization', `Bearer ${teamToken}`)
+        .expect(403);
+    });
+
+    it('org scope, not the author: succeeds as a moderator', async () => {
+      const postId = await createPostAsOrgUser();
+      await request(http)
+        .delete(`/api/v1/community/posts/${postId}`)
+        .set('Authorization', `Bearer ${orgToken}`)
+        .expect(200);
+    });
+  });
+
+  describe('Organization structure — permission-gated only, no employee-management scope applies (P1-20)', () => {
+    // Departments/teams/business-units/designations/grades aren't
+    // employee-keyed resources - there's no "target employee" for the usual
+    // self/team/org matrix to apply to, and nothing in this module calls
+    // assertActingOnEmployee or scopedEmployeeIds (confirmed against
+    // current main, and matching the empty diff found auditing an older,
+    // unmerged branch that set out to add exactly that and found nothing to
+    // change). This documents that as intended behavior, not a gap: access
+    // is controlled by organization_structure.read/write alone, uniformly
+    // across every scope kind.
+    it('read: self, team, and org scope all succeed alike, gated by permission only', async () => {
+      for (const token of [selfToken, teamToken, orgToken]) {
+        await request(http)
+          .get('/api/v1/departments')
+          .set('Authorization', `Bearer ${token}`)
+          .expect(200);
+      }
+    });
+
+    it('write: team scope with organization_structure.write succeeds same as org scope', async () => {
+      // business-units, not departments: departments.repository.ts (and
+      // teams.repository.ts) insert a parent_business_unit_id column that
+      // doesn't exist on their tables - a real, pre-existing bug, unrelated
+      // to scope, flagged separately in this file's beforeAll rather than
+      // fixed here. business_units genuinely owns that column, so its
+      // create route is clean.
+      await request(http)
+        .post('/api/v1/business-units')
+        .set('Authorization', `Bearer ${teamToken}`)
+        .send({ name: `P1-22 Team-Created BU ${Date.now()}`, code: `P22TCBU${Date.now()}` })
+        .expect(201);
     });
   });
 
