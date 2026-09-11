@@ -5,6 +5,7 @@ import {
   ParseIntPipe,
   DefaultValuePipe,
   Request,
+  ForbiddenException,
 } from '@nestjs/common';
 import { AuditService } from './audit.service';
 import { RequirePermissions } from '../common/decorators/require-permissions.decorator';
@@ -22,6 +23,10 @@ export class AuditController {
     @Query('offset', new DefaultValuePipe(0), ParseIntPipe) offset: number,
   ) {
     const tenantContext: TenantContext = req.tenantContext;
+
+    if (tenantContext.scope?.kind !== 'org') {
+      throw new ForbiddenException('audit log access requires organization-wide scope');
+    }
 
     // Ensure reasonable limits
     const safeLimit = Math.min(limit, 1000);
