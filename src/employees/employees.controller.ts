@@ -48,6 +48,13 @@ export class EmployeesController {
     return { success: true, data: employee };
   }
 
+  @Get(':id/sensitive')
+  @RequirePermissions('employee.sensitive.read')
+  async getSensitive(@CurrentUser() tenantContext: TenantContext, @Param('id') id: string) {
+    const data = await this.service.getSensitive(tenantContext, id);
+    return { success: true, data };
+  }
+
   @Put(':id')
   @RequirePermissions('employee.update')
   async update(
