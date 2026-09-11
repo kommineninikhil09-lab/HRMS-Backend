@@ -8,6 +8,7 @@ import { PerformanceAppraisalRepository } from './repositories/performance-appra
 import { AppraisalRatingRepository } from './repositories/appraisal-rating.repository';
 import { CompetencyRepository } from './repositories/competency.repository';
 import { PerformanceGoalRepository } from './repositories/performance-goal.repository';
+import { assertActingOnEmployee, scopedEmployeeIds } from '../common/scope/scope.util';
 
 @Injectable()
 export class PerformanceService {
@@ -163,14 +164,18 @@ export class PerformanceService {
   }
 
   async getAppraisals(tenantContext: TenantContext, filters?: any) {
+    if (filters?.employee_id) {
+      assertActingOnEmployee(tenantContext, filters.employee_id);
+      return this.appraisalRepository.findByEmployee(tenantContext, filters.employee_id);
+    }
+
+    const scopedIds = scopedEmployeeIds(tenantContext);
+
     if (filters?.cycle_id) {
-      return this.appraisalRepository.findByCycle(tenantContext, filters.cycle_id);
+      return this.appraisalRepository.findByCycle(tenantContext, filters.cycle_id, scopedIds);
     }
     if (filters?.status) {
-      return this.appraisalRepository.findByStatus(tenantContext, filters.status);
-    }
-    if (filters?.employee_id) {
-      return this.appraisalRepository.findByEmployee(tenantContext, filters.employee_id);
+      return this.appraisalRepository.findByStatus(tenantContext, filters.status, scopedIds);
     }
     return [];
   }
@@ -180,6 +185,10 @@ export class PerformanceService {
     if (!appraisal) {
       throw new NotFoundException('Performance appraisal not found');
     }
+    // PerformanceAppraisalRepository goes through BaseRepository.queryOne,
+    // which camelCases every row (see database/case-mapper.util.ts) - the
+    // real field here is employeeId, not employee_id.
+    assertActingOnEmployee(tenantContext, appraisal.employeeId);
     return appraisal;
   }
 
@@ -327,6 +336,13 @@ export class PerformanceService {
     if (appraisal.status !== 'submitted') {
       throw new BadRequestException('Only submitted appraisals can be reviewed');
     }
+    // Same standard check as every other employee-keyed route in this
+    // module - no directOnly-style narrowing. main's {kind:'team'} scope is
+    // already a flat manager_scopes-assigned set, not a recursive
+    // org-chart subtree, so there's no "direct report vs. subtree report"
+    // distinction to be broad or narrow about the way the original plan
+    // assumed.
+    assertActingOnEmployee(tenantContext, appraisal.employeeId);
 
     const updated = await this.appraisalRepository.update(tenantContext, appraisalId, {
       status: 'reviewed',
@@ -355,6 +371,10 @@ export class PerformanceService {
     if (appraisal.status !== 'reviewed') {
       throw new BadRequestException('Only reviewed appraisals can be finalized');
     }
+    // Found alongside reviewAppraisal - same gap, same fix. Not explicitly
+    // named in the original task, but there's no reason finalize should be
+    // less guarded than review for the same resource.
+    assertActingOnEmployee(tenantContext, appraisal.employeeId);
 
     const updated = await this.appraisalRepository.update(tenantContext, appraisalId, {
       status: 'finalized',
@@ -374,6 +394,8 @@ export class PerformanceService {
 
   // Performance Goals
   async createGoal(tenantContext: TenantContext, dto: any) {
+    assertActingOnEmployee(tenantContext, dto.employee_id);
+
     const goal = await this.goalRepository.create(tenantContext, {
       employee_id: dto.employee_id,
       cycle_id: dto.cycle_id,
@@ -419,6 +441,7 @@ export class PerformanceService {
   }
 
   async getEmployeeGoals(tenantContext: TenantContext, employeeId: string) {
+    assertActingOnEmployee(tenantContext, employeeId);
     return this.goalRepository.findByEmployee(tenantContext, employeeId);
   }
 

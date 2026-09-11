@@ -5,6 +5,7 @@ import {
   ParseIntPipe,
   DefaultValuePipe,
   Request,
+  ForbiddenException,
 } from '@nestjs/common';
 import { AuditService } from './audit.service';
 import { RequirePermissions } from '../common/decorators/require-permissions.decorator';
@@ -23,6 +24,10 @@ export class AuditController {
   ) {
     const tenantContext: TenantContext = req.tenantContext;
 
+    if (tenantContext.scope?.kind !== 'org') {
+      throw new ForbiddenException('audit log access requires organization-wide scope');
+    }
+
     // Ensure reasonable limits
     const safeLimit = Math.min(limit, 1000);
     const safeOffset = Math.max(offset, 0);
@@ -34,11 +39,11 @@ export class AuditController {
     );
 
     return {
-      logs: logs.map((log) => ({
-        ...log,
-        oldValue: log.oldValue ? JSON.parse(log.oldValue as any) : null,
-        newValue: log.newValue ? JSON.parse(log.newValue as any) : null,
-      })),
+      // old_value/new_value are jsonb columns — pg already returns them as
+      // parsed objects, not strings. JSON.parse()'ing an object crashes
+      // (implicitly stringifies to "[object Object]" first, which isn't
+      // valid JSON), so any log row with a non-null value 500'd.
+      logs,
       pagination: {
         limit: safeLimit,
         offset: safeOffset,
@@ -66,10 +71,6 @@ export class AuditController {
       safeLimit,
     );
 
-    return logs.map((log) => ({
-      ...log,
-      oldValue: log.oldValue ? JSON.parse(log.oldValue as any) : null,
-      newValue: log.newValue ? JSON.parse(log.newValue as any) : null,
-    }));
+    return logs;
   }
 }
