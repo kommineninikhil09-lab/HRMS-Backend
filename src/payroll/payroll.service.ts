@@ -147,7 +147,13 @@ export class PayrollService {
     if (!slip) {
       throw new NotFoundException('Salary slip not found');
     }
-    assertActingOnEmployee(tenantContext, slip.employee_id);
+    // SalarySlipRepository goes through BaseRepository.query/queryOne, which
+    // camelCases every row (see database/case-mapper.util.ts) - but the
+    // SalarySlip interface it returns still declares snake_case field names,
+    // so the real runtime shape and its own declared type disagree. Casting
+    // to reach the real field rather than "fixing" the interface, which
+    // would ripple into everywhere else a SalarySlip is typed.
+    assertActingOnEmployee(tenantContext, (slip as any).employeeId);
     return slip;
   }
 
@@ -287,9 +293,11 @@ export class PayrollService {
       );
     }
 
+    // assignment.structureId, not structure_id: SalaryAssignmentRepository
+    // goes through BaseRepository.query/queryOne, which camelCases rows.
     const components = await this.structureComponentRepository.findByStructure(
       tenantContext,
-      assignment.structure_id,
+      (assignment as any).structureId,
     );
 
     if (components.length === 0) {
@@ -316,14 +324,18 @@ export class PayrollService {
       );
 
       for (const component of components) {
-        const amount = component.amount || 0;
-        const componentType = (component.component_type || 'deduction') as 'earnings' | 'deduction' | 'tax';
+        // componentType/componentId/componentName, not the snake_case
+        // interface field names — StructureComponentRepository also goes
+        // through BaseRepository.query, which camelCases rows.
+        const c = component as any;
+        const amount = c.amount || 0;
+        const componentType = (c.componentType || 'deduction') as 'earnings' | 'deduction' | 'tax';
 
         await this.slipComponentRepository.addComponentToSlip(
           tenantContext,
           slip.id,
-          component.component_id,
-          component.component_name || 'Unknown Component',
+          c.componentId,
+          c.componentName || 'Unknown Component',
           componentType,
           amount,
           client,
@@ -369,7 +381,8 @@ export class PayrollService {
     if (!slip) {
       throw new NotFoundException('Salary slip not found');
     }
-    assertActingOnEmployee(tenantContext, slip.employee_id);
+    // See getSalarySlip above for why this is a cast, not slip.employee_id.
+    assertActingOnEmployee(tenantContext, (slip as any).employeeId);
 
     const components = await this.slipComponentRepository.getSlipBreakdown(
       tenantContext,

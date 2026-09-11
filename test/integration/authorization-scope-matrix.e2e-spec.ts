@@ -134,6 +134,33 @@ describe('Authorization scope matrix (E2E)', () => {
     }
 
     teamToken = await login('admin2@dev-org.local', 'Admin@123456');
+
+    // admin2's role (Admin) holds none of payroll.*/performance.*/audit.read
+    // by default — confirmed against the real seed data (src/database/seeds/seed.ts's
+    // adminPermissions list) and the migrations that create those permission
+    // codes (neither grants them to anyone but Super Admin). The dev database
+    // has untracked drift where Admin additionally holds payroll.read/
+    // payroll.approve — a further instance of the same undocumented-grant
+    // pattern found elsewhere this session (permission_scope,
+    // employee.sensitive.read). Granting these here, test-fixture-only, so
+    // the team-scope assertions below test the scope lock specifically,
+    // not an incidental permission-denied from a role that was never given
+    // the permission at all.
+    await pool.query(`
+      INSERT INTO role_permissions (organization_id, role_id, permission_id)
+      SELECT r.organization_id, r.id, p.id
+      FROM roles r, permissions p
+      WHERE r.name = 'Admin'
+        AND p.code IN (
+          'payroll.read', 'payroll.write', 'payroll.process', 'payroll.approve',
+          'performance.read', 'performance.write', 'performance.cycles', 'performance.templates',
+          'audit.read'
+        )
+      ON CONFLICT (role_id, permission_id) DO NOTHING;
+    `);
+    // admin2's token was minted before this grant — the JWT itself doesn't
+    // carry permissions (those are resolved fresh per request), so no
+    // re-login is needed for the new grants to take effect.
   });
 
   afterAll(async () => {
@@ -249,13 +276,18 @@ describe('Authorization scope matrix (E2E)', () => {
   });
 
   // ---------------------------------------------------------------------
-  // Not yet enforced — Phase 1 hasn't landed on these modules. Written
-  // against the routes as they exist today so the assertions are ready
-  // the moment each task ships; skipped until then rather than omitted.
+  // Formerly skipped pending Phase 1 — all landed now, so these run for
+  // real. admin2 (Admin role) was granted payroll.*/performance.*/
+  // audit.read as a test-fixture-only step above, so these assertions
+  // test the scope lock specifically, not an incidental permission-denied.
   // ---------------------------------------------------------------------
 
-  describe.skip('Employees — getById/update/delete scope-gating (blocked on P1-01)', () => {
-    it('team scope: 403s on an out-of-scope employee id', async () => {
+  describe('Employees — getById/update/delete scope-gating (P1-01)', () => {
+    it('team scope: reaches the in-scope target, 403s on the out-of-scope one', async () => {
+      await request(http)
+        .get(`/api/v1/employees/${inScopeEmployeeId}`)
+        .set('Authorization', `Bearer ${teamToken}`)
+        .expect(200);
       await request(http)
         .get(`/api/v1/employees/${outOfScopeEmployeeId}`)
         .set('Authorization', `Bearer ${teamToken}`)
@@ -263,27 +295,39 @@ describe('Authorization scope matrix (E2E)', () => {
     });
   });
 
-  describe.skip('Employees — getAll scope-filtering (blocked on P1-02)', () => {
+  describe('Employees — getAll scope-filtering (P1-02)', () => {
     it('self scope: GET /employees returns only the caller', async () => {
       const res = await request(http)
         .get('/api/v1/employees')
         .set('Authorization', `Bearer ${selfToken}`)
         .expect(200);
       expect(res.body.data).toHaveLength(1);
+      expect(res.body.data[0].id).toBe(inScopeEmployeeId);
     });
   });
 
-  describe.skip('Employees — sensitive-fields endpoint (blocked on P1-03)', () => {
-    it('Employee role gets 403 even for their own id', async () => {
+  describe('Employees — sensitive-fields endpoint (P1-03)', () => {
+    it('Employee role gets 403 even for their own id (no employee.sensitive.read grant)', async () => {
       await request(http)
         .get(`/api/v1/employees/${inScopeEmployeeId}/sensitive`)
         .set('Authorization', `Bearer ${selfToken}`)
         .expect(403);
     });
+
+    it('org scope with employee.sensitive.read succeeds', async () => {
+      await request(http)
+        .get(`/api/v1/employees/${inScopeEmployeeId}/sensitive`)
+        .set('Authorization', `Bearer ${orgToken}`)
+        .expect(200);
+    });
   });
 
-  describe.skip('Payroll — employee-keyed and slip routes (blocked on P1-11, P1-12)', () => {
-    it('team scope: 403s on an out-of-scope employee id', async () => {
+  describe('Payroll — employee-keyed and slip routes (P1-11, P1-12)', () => {
+    it('team scope: reaches the in-scope employee, 403s on the out-of-scope one', async () => {
+      await request(http)
+        .get(`/api/v1/payroll/employee/${inScopeEmployeeId}/slips`)
+        .set('Authorization', `Bearer ${teamToken}`)
+        .expect(200);
       await request(http)
         .get(`/api/v1/payroll/employee/${outOfScopeEmployeeId}/slips`)
         .set('Authorization', `Bearer ${teamToken}`)
@@ -291,25 +335,176 @@ describe('Authorization scope matrix (E2E)', () => {
     });
   });
 
-  describe.skip('Payroll — approve/mark-paid locked to org scope (blocked on P1-13)', () => {
+  describe('Payroll — approve/mark-paid locked to org scope (P1-13)', () => {
+    let slipId: string;
+
+    beforeAll(async () => {
+      const structureRes = await request(http)
+        .post('/api/v1/payroll/structures')
+        .set('Authorization', `Bearer ${orgToken}`)
+        .send({ name: `Scope Matrix Structure ${Date.now()}`, code: `SMS${Date.now()}` });
+      if (structureRes.status !== 201) {
+        throw new Error(`salary structure create failed: ${structureRes.status} ${JSON.stringify(structureRes.body)}`);
+      }
+      const structureId = structureRes.body.data.id as string;
+
+      const assignRes = await request(http)
+        .post('/api/v1/payroll/assignments')
+        .set('Authorization', `Bearer ${orgToken}`)
+        .send({
+          employee_id: inScopeEmployeeId,
+          structure_id: structureId,
+          // Must be on or before "now" (findActiveByEmployee filters
+          // effective_date <= now, unlike the future dates used elsewhere
+          // in this file for collision-avoidance) AND more recent than any
+          // other assignment for this employee, since
+          // ORDER BY effective_date DESC LIMIT 1 picks the latest one —
+          // an unrelated pre-existing assignment with a recent
+          // effective_date was winning over an earlier attempt at a fixed
+          // past date here. new Date() covers both.
+          effective_date: new Date().toISOString().slice(0, 10),
+        });
+      if (assignRes.status !== 201) {
+        throw new Error(`salary assignment create failed: ${assignRes.status} ${JSON.stringify(assignRes.body)}`);
+      }
+
+      const componentRes = await request(http)
+        .post('/api/v1/payroll/components')
+        .set('Authorization', `Bearer ${orgToken}`)
+        .send({ name: 'Base Pay', code: `BASE${Date.now()}`, component_type: 'earnings' });
+      if (componentRes.status !== 201) {
+        throw new Error(`salary component create failed: ${componentRes.status} ${JSON.stringify(componentRes.body)}`);
+      }
+      const componentId = componentRes.body.data.id as string;
+
+      // No HTTP endpoint attaches a component to a structure —
+      // structure-component.repository.ts has addComponentToStructure, but
+      // nothing in payroll.controller.ts/payroll.service.ts ever calls it.
+      // Direct insert for fixture purposes, same as the department
+      // workaround above; a real gap, not something to build out here.
+      const orgRow2 = await pool.query(`SELECT id FROM organizations LIMIT 1`);
+      const organizationId2 = orgRow2.rows[0].id as string;
+      await pool.query(
+        `INSERT INTO structure_components (organization_id, structure_id, component_id, amount, is_active)
+         VALUES ($1, $2, $3, $4, true)`,
+        [organizationId2, structureId, componentId, 50000],
+      );
+
+      // salary_slips.pay_cycle_id is a real FK with no HTTP endpoint to
+      // create one through (no pay-cycles route on PayrollController
+      // either) — direct insert, same pattern as above.
+      const payCycleInsert = await pool.query(
+        `INSERT INTO pay_cycles (organization_id, name, code, frequency, start_date)
+         VALUES ($1, $2, $3, 'monthly', $4) RETURNING id`,
+        [organizationId2, `Scope Matrix Pay Cycle ${Date.now()}`, `SMPC${Date.now()}`, '2030-01-01'],
+      );
+      const payCycleId = payCycleInsert.rows[0].id as string;
+
+      const slipRes = await request(http)
+        .post('/api/v1/payroll/slips/generate')
+        .set('Authorization', `Bearer ${orgToken}`)
+        .send({
+          employee_id: inScopeEmployeeId,
+          month: '2030-01',
+          pay_cycle_id: payCycleId,
+        });
+      if (slipRes.status !== 201) {
+        throw new Error(`slip generate failed: ${slipRes.status} ${JSON.stringify(slipRes.body)}`);
+      }
+      slipId = slipRes.body.data.id as string;
+    });
+
     it('team scope with payroll.approve still 403s — org-only regardless of target', async () => {
-      // Placeholder: needs a real slip id and a payroll.approve grant on the
-      // team-scoped fixture to be meaningful; wire up once P1-13 lands.
+      await request(http)
+        .put(`/api/v1/payroll/slips/${slipId}/approve`)
+        .set('Authorization', `Bearer ${teamToken}`)
+        .expect(403);
+    });
+
+    it('org scope: approves successfully', async () => {
+      await request(http)
+        .put(`/api/v1/payroll/slips/${slipId}/approve`)
+        .set('Authorization', `Bearer ${orgToken}`)
+        .expect(200);
     });
   });
 
-  describe.skip('Performance — resource-keyed appraisal + goals (blocked on P1-14, P1-15, P1-16)', () => {
-    it('team scope: 403s on an out-of-scope appraisal', async () => {
-      // Placeholder pending P1-14.
+  describe('Performance — resource-keyed appraisal + goals (P1-14, P1-15, P1-16)', () => {
+    let appraisalId: string;
+
+    beforeAll(async () => {
+      const cycleRes = await request(http)
+        .post('/api/v1/performance/cycles')
+        .set('Authorization', `Bearer ${orgToken}`)
+        .send({
+          name: `Scope Matrix Cycle ${Date.now()}`,
+          cycle_type: 'annual',
+          start_date: '2030-01-01',
+          end_date: '2030-12-31',
+        });
+      if (cycleRes.status !== 201) {
+        throw new Error(`cycle create failed: ${cycleRes.status} ${JSON.stringify(cycleRes.body)}`);
+      }
+      const cycleId = cycleRes.body.data.id as string;
+
+      const templateRes = await request(http)
+        .post('/api/v1/performance/templates')
+        .set('Authorization', `Bearer ${orgToken}`)
+        .send({
+          name: `Scope Matrix Template ${Date.now()}`,
+          description: 'Scope matrix fixture',
+          template_type: 'annual',
+          rating_scale: '1-5',
+        });
+      if (templateRes.status !== 201) {
+        throw new Error(`template create failed: ${templateRes.status} ${JSON.stringify(templateRes.body)}`);
+      }
+      const templateId = templateRes.body.data.id as string;
+
+      const appraisalRes = await request(http)
+        .post('/api/v1/performance/appraisals')
+        .set('Authorization', `Bearer ${orgToken}`)
+        .send({
+          cycle_id: cycleId,
+          employee_id: inScopeEmployeeId,
+          template_id: templateId,
+          appraisal_type: 'annual',
+        });
+      if (appraisalRes.status !== 201) {
+        throw new Error(`appraisal create failed: ${appraisalRes.status} ${JSON.stringify(appraisalRes.body)}`);
+      }
+      appraisalId = appraisalRes.body.data.id as string;
+    });
+
+    it('team scope: reaches the in-scope appraisal', async () => {
+      await request(http)
+        .get(`/api/v1/performance/appraisals/${appraisalId}`)
+        .set('Authorization', `Bearer ${teamToken}`)
+        .expect(200);
+    });
+
+    it('team scope: creating a goal for an out-of-scope employee 403s', async () => {
+      await request(http)
+        .post('/api/v1/performance/goals')
+        .set('Authorization', `Bearer ${teamToken}`)
+        .send({ employee_id: outOfScopeEmployeeId, goal_title: 'Should be blocked' })
+        .expect(403);
     });
   });
 
-  describe.skip('Audit — logs locked to org scope (blocked on P1-21)', () => {
-    it('team scope gets 403 regardless of audit.read grant', async () => {
+  describe('Audit — logs locked to org scope (P1-21)', () => {
+    it('team scope gets 403 even with audit.read granted', async () => {
       await request(http)
         .get('/api/v1/audit/logs')
         .set('Authorization', `Bearer ${teamToken}`)
         .expect(403);
+    });
+
+    it('org scope succeeds', async () => {
+      await request(http)
+        .get('/api/v1/audit/logs')
+        .set('Authorization', `Bearer ${orgToken}`)
+        .expect(200);
     });
   });
 });

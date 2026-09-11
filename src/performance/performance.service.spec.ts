@@ -17,7 +17,9 @@ describe('PerformanceService.getAppraisal — resource-keyed authorization (P1-1
   let appraisalRepository: any;
   let service: PerformanceService;
 
-  const appraisal = { id: 'appraisal-1', employee_id: 'target-employee-1', status: 'draft' };
+  // employeeId, not employee_id: PerformanceAppraisalRepository goes
+  // through BaseRepository.query/queryOne, which camelCases every row.
+  const appraisal = { id: 'appraisal-1', employeeId: 'target-employee-1', status: 'draft' };
 
   beforeEach(() => {
     appraisalRepository = { findById: jest.fn().mockResolvedValue(appraisal) };
