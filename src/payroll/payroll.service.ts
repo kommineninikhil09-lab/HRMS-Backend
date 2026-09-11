@@ -152,6 +152,7 @@ export class PayrollService {
   }
 
   async getEmployeeSalarySlips(tenantContext: TenantContext, employeeId: string) {
+    assertActingOnEmployee(tenantContext, employeeId);
     return this.salarySlipRepository.findByEmployeeAndYear(
       tenantContext,
       employeeId,
@@ -251,10 +252,12 @@ export class PayrollService {
   }
 
   async getEmployeeSalaryAssignment(tenantContext: TenantContext, employeeId: string) {
+    assertActingOnEmployee(tenantContext, employeeId);
     return this.assignmentRepository.findActiveByEmployee(tenantContext, employeeId);
   }
 
   async getEmployeeAssignmentHistory(tenantContext: TenantContext, employeeId: string) {
+    assertActingOnEmployee(tenantContext, employeeId);
     return this.assignmentRepository.findByEmployee(tenantContext, employeeId);
   }
 
