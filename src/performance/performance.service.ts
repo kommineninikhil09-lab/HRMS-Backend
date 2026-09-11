@@ -181,6 +181,7 @@ export class PerformanceService {
     if (!appraisal) {
       throw new NotFoundException('Performance appraisal not found');
     }
+    assertActingOnEmployee(tenantContext, appraisal.employee_id);
     return appraisal;
   }
 

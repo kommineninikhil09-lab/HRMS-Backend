@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
 import { TenantContext } from '../database/tenant-context';
 import { TransactionService } from '../database/transaction.service';
 import { AuditService } from '../audit/audit.service';
@@ -8,6 +8,7 @@ import { SalarySlipRepository } from './repositories/salary-slip.repository';
 import { SalaryAssignmentRepository } from './repositories/salary-assignment.repository';
 import { StructureComponentRepository } from './repositories/structure-component.repository';
 import { SlipComponentRepository } from './repositories/slip-component.repository';
+import { assertActingOnEmployee } from '../common/scope/scope.util';
 
 export interface CreateSalaryStructureDTO {
   name: string;
@@ -146,10 +147,12 @@ export class PayrollService {
     if (!slip) {
       throw new NotFoundException('Salary slip not found');
     }
+    assertActingOnEmployee(tenantContext, slip.employee_id);
     return slip;
   }
 
   async getEmployeeSalarySlips(tenantContext: TenantContext, employeeId: string) {
+    assertActingOnEmployee(tenantContext, employeeId);
     return this.salarySlipRepository.findByEmployeeAndYear(
       tenantContext,
       employeeId,
@@ -158,6 +161,10 @@ export class PayrollService {
   }
 
   async approveSalarySlip(tenantContext: TenantContext, slipId: string) {
+    if (tenantContext.scope?.kind !== 'org') {
+      throw new ForbiddenException('payroll approval requires organization-wide scope');
+    }
+
     const slip = await this.salarySlipRepository.findById(tenantContext, slipId);
     if (!slip) {
       throw new NotFoundException('Salary slip not found');
@@ -185,6 +192,10 @@ export class PayrollService {
   }
 
   async markSalarySlipAsPaid(tenantContext: TenantContext, slipId: string) {
+    if (tenantContext.scope?.kind !== 'org') {
+      throw new ForbiddenException('marking a slip paid requires organization-wide scope');
+    }
+
     const slip = await this.salarySlipRepository.findById(tenantContext, slipId);
     if (!slip) {
       throw new NotFoundException('Salary slip not found');
@@ -249,10 +260,12 @@ export class PayrollService {
   }
 
   async getEmployeeSalaryAssignment(tenantContext: TenantContext, employeeId: string) {
+    assertActingOnEmployee(tenantContext, employeeId);
     return this.assignmentRepository.findActiveByEmployee(tenantContext, employeeId);
   }
 
   async getEmployeeAssignmentHistory(tenantContext: TenantContext, employeeId: string) {
+    assertActingOnEmployee(tenantContext, employeeId);
     return this.assignmentRepository.findByEmployee(tenantContext, employeeId);
   }
 
@@ -356,6 +369,7 @@ export class PayrollService {
     if (!slip) {
       throw new NotFoundException('Salary slip not found');
     }
+    assertActingOnEmployee(tenantContext, slip.employee_id);
 
     const components = await this.slipComponentRepository.getSlipBreakdown(
       tenantContext,
