@@ -29,6 +29,8 @@ export const PERMISSIONS = {
   EMPLOYEE_CREATE: 'employee.create',
   EMPLOYEE_UPDATE: 'employee.update',
   EMPLOYEE_DELETE: 'employee.delete',
+  EMPLOYEE_DIRECTORY_READ: 'employee.directory.read',
+  EMPLOYEE_SENSITIVE_READ: 'employee.sensitive.read',
 
   // Sensitive
   SALARY_READ: 'salary.read',
