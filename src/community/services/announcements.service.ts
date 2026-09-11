@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
 import { AnnouncementsRepository, Announcement, CreateAnnouncementDto } from '../repositories/announcements.repository';
 import { TenantContext } from '../../database/tenant-context';
 import { AuditService } from '../../audit/audit.service';
@@ -98,6 +98,10 @@ export class AnnouncementsService {
   }
 
   async publishAnnouncement(tenantContext: TenantContext, announcementId: string): Promise<Announcement> {
+    if (tenantContext.scope?.kind !== 'org') {
+      throw new ForbiddenException('publishing an announcement requires organization-wide scope');
+    }
+
     const announcement = await this.getAnnouncement(tenantContext, announcementId);
 
     const published = await this.announcementsRepository.publish(tenantContext, announcementId);
