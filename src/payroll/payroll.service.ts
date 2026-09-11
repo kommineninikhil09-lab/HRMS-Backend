@@ -147,6 +147,7 @@ export class PayrollService {
     if (!slip) {
       throw new NotFoundException('Salary slip not found');
     }
+    assertActingOnEmployee(tenantContext, slip.employee_id);
     return slip;
   }
 
@@ -360,6 +361,7 @@ export class PayrollService {
     if (!slip) {
       throw new NotFoundException('Salary slip not found');
     }
+    assertActingOnEmployee(tenantContext, slip.employee_id);
 
     const components = await this.slipComponentRepository.getSlipBreakdown(
       tenantContext,
