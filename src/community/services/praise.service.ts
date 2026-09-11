@@ -108,12 +108,30 @@ export class PraiseService {
 
   async addLike(tenantContext: TenantContext, praiseId: string): Promise<number> {
     await this.getPraise(tenantContext, praiseId);
-    return this.praiseRepository.incrementLikesCount(praiseId);
+    const count = await this.praiseRepository.incrementLikesCount(praiseId);
+
+    await this.auditService.record(tenantContext, {
+      action: 'UPDATE',
+      entity_type: 'Praise',
+      entity_id: praiseId,
+      new_value: { likes_count: count },
+    });
+
+    return count;
   }
 
   async removeLike(tenantContext: TenantContext, praiseId: string): Promise<number> {
     await this.getPraise(tenantContext, praiseId);
-    return this.praiseRepository.decrementLikesCount(praiseId);
+    const count = await this.praiseRepository.decrementLikesCount(praiseId);
+
+    await this.auditService.record(tenantContext, {
+      action: 'UPDATE',
+      entity_type: 'Praise',
+      entity_id: praiseId,
+      new_value: { likes_count: count },
+    });
+
+    return count;
   }
 
   async addComment(tenantContext: TenantContext, praiseId: string): Promise<number> {

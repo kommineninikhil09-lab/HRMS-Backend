@@ -96,3 +96,43 @@ describe('PostsService.deletePost — author or moderator (P1-19)', () => {
     expect(postsRepository.delete).not.toHaveBeenCalled();
   });
 });
+
+describe('PostsService.addLike/removeLike — audit coverage (P3-03)', () => {
+  let postsRepository: any;
+  let auditService: any;
+  let service: PostsService;
+
+  const post = { id: 'post-1', user_id: 'author-1', content: 'original' };
+
+  beforeEach(() => {
+    postsRepository = {
+      findById: jest.fn().mockResolvedValue(post),
+      incrementLikesCount: jest.fn().mockResolvedValue(5),
+      decrementLikesCount: jest.fn().mockResolvedValue(4),
+    };
+    auditService = { record: jest.fn().mockResolvedValue(undefined) };
+    service = new PostsService(postsRepository, auditService);
+  });
+
+  it('addLike records an UPDATE audit entry with the new count', async () => {
+    const ctx = makeContext();
+    await service.addLike(ctx, 'post-1');
+    expect(auditService.record).toHaveBeenCalledWith(ctx, {
+      action: 'UPDATE',
+      entity_type: 'Post',
+      entity_id: 'post-1',
+      new_value: { likes_count: 5 },
+    });
+  });
+
+  it('removeLike records an UPDATE audit entry with the new count', async () => {
+    const ctx = makeContext();
+    await service.removeLike(ctx, 'post-1');
+    expect(auditService.record).toHaveBeenCalledWith(ctx, {
+      action: 'UPDATE',
+      entity_type: 'Post',
+      entity_id: 'post-1',
+      new_value: { likes_count: 4 },
+    });
+  });
+});

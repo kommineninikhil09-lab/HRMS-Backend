@@ -63,7 +63,7 @@ export class PollsController {
     @Param('id') id: string,
     @Body() dto: VotePollRequestDto,
   ): Promise<{ success: boolean }> {
-    await this.pollsService.recordVote(dto.poll_option_id, id);
+    await this.pollsService.recordVote(tenantContext, dto.poll_option_id, id);
     return { success: true };
   }
 

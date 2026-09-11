@@ -85,12 +85,28 @@ export class PostsService {
   async addLike(tenantContext: TenantContext, postId: string): Promise<number> {
     await this.getPost(tenantContext, postId);
     const count = await this.postsRepository.incrementLikesCount(postId);
+
+    await this.auditService.record(tenantContext, {
+      action: 'UPDATE',
+      entity_type: 'Post',
+      entity_id: postId,
+      new_value: { likes_count: count },
+    });
+
     return count;
   }
 
   async removeLike(tenantContext: TenantContext, postId: string): Promise<number> {
     await this.getPost(tenantContext, postId);
     const count = await this.postsRepository.decrementLikesCount(postId);
+
+    await this.auditService.record(tenantContext, {
+      action: 'UPDATE',
+      entity_type: 'Post',
+      entity_id: postId,
+      new_value: { likes_count: count },
+    });
+
     return count;
   }
 
