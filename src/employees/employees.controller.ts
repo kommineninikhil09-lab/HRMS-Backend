@@ -55,6 +55,13 @@ export class EmployeesController {
     return { success: true, data };
   }
 
+  @Get(':id/employment-history')
+  @RequirePermissions('employee.read')
+  async getEmploymentHistory(@CurrentUser() tenantContext: TenantContext, @Param('id') id: string) {
+    const history = await this.service.getEmploymentHistory(tenantContext, id);
+    return { success: true, data: history };
+  }
+
   @Put(':id')
   @RequirePermissions('employee.update')
   async update(

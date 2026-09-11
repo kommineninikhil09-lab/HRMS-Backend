@@ -117,6 +117,15 @@ export class EmployeesService {
     return (await this.repository.findSensitiveFields(tenantContext, id)) ?? null;
   }
 
+  async getEmploymentHistory(tenantContext: TenantContext, id: string) {
+    const employee = await this.repository.findById(tenantContext, id);
+    if (!employee) {
+      throw new NotFoundException('Employee not found');
+    }
+    assertActingOnEmployee(tenantContext, id);
+    return this.historyRepository.getByEmployee(tenantContext, id);
+  }
+
   async update(tenantContext: TenantContext, id: string, dto: UpdateEmployeeDTO) {
     const employee = await this.repository.findById(tenantContext, id);
     if (!employee) {

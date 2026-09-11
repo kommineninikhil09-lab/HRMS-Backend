@@ -194,6 +194,52 @@ describe('EmployeesService.getSensitive (P1-03)', () => {
   });
 });
 
+describe('EmployeesService.getEmploymentHistory (P3-01)', () => {
+  let repository: any;
+  let historyRepository: any;
+  let service: EmployeesService;
+
+  const targetEmployee = { id: 'target-employee-1', work_email: 'target@dev-org.local', status: 'active' };
+  const historyRows = [
+    { id: 'h-1', employee_id: 'target-employee-1', event_type: 'joining', effective_date: '2024-01-01' },
+  ];
+
+  beforeEach(() => {
+    repository = { findById: jest.fn().mockResolvedValue(targetEmployee) };
+    historyRepository = { getByEmployee: jest.fn().mockResolvedValue(historyRows) };
+    service = new EmployeesService(repository, historyRepository, {} as any, {} as any);
+  });
+
+  it('throws NotFoundException before any scope check for a nonexistent id', async () => {
+    repository.findById.mockResolvedValueOnce(undefined);
+    const ctx = makeContext({ scope: SELF_SCOPE });
+    await expect(service.getEmploymentHistory(ctx, 'missing')).rejects.toThrow(NotFoundException);
+    expect(historyRepository.getByEmployee).not.toHaveBeenCalled();
+  });
+
+  it('self scope: succeeds for your own id, 403s for anyone else', async () => {
+    const ctxSelf = makeContext({ employeeId: targetEmployee.id, scope: SELF_SCOPE });
+    await expect(service.getEmploymentHistory(ctxSelf, targetEmployee.id)).resolves.toEqual(historyRows);
+
+    const ctxOther = makeContext({ employeeId: 'someone-else', scope: SELF_SCOPE });
+    await expect(service.getEmploymentHistory(ctxOther, targetEmployee.id)).rejects.toThrow(ForbiddenException);
+    expect(historyRepository.getByEmployee).not.toHaveBeenCalledWith(ctxOther, targetEmployee.id);
+  });
+
+  it('team scope: succeeds for a target in the resolved set, 403s for one outside it', async () => {
+    const ctxIn = makeContext({ scope: { kind: 'team', employeeIds: new Set([targetEmployee.id]) } });
+    await expect(service.getEmploymentHistory(ctxIn, targetEmployee.id)).resolves.toEqual(historyRows);
+
+    const ctxOut = makeContext({ scope: { kind: 'team', employeeIds: new Set(['someone-else']) } });
+    await expect(service.getEmploymentHistory(ctxOut, targetEmployee.id)).rejects.toThrow(ForbiddenException);
+  });
+
+  it('org scope: succeeds for any target', async () => {
+    const ctx = makeContext({ scope: ORG_SCOPE });
+    await expect(service.getEmploymentHistory(ctx, targetEmployee.id)).resolves.toEqual(historyRows);
+  });
+});
+
 describe('EmployeesService.update — manager cycle guard', () => {
   let repository: any;
   let historyRepository: any;
