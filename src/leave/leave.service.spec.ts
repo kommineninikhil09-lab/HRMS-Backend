@@ -14,6 +14,90 @@ function makeContext(overrides: Partial<TenantContext> = {}): TenantContext {
 }
 
 /**
+ * P1-10 — verification, not new implementation. Both getLeaveBalance
+ * (backing GET balance/employee/:employeeId) and getEmployeeLeaveRequests
+ * (backing GET employee/:employeeId/requests) already call
+ * assertActingOnEmployee(tenantContext, employeeId) as their first line —
+ * confirmed by reading leave.service.ts. These tests are the
+ * acceptance-criteria evidence for that, not a retrofit.
+ */
+describe('LeaveService.getLeaveBalance — scope-gated by employeeId (P1-10)', () => {
+  let leaveBalanceRepo: any;
+  let service: LeaveService;
+
+  beforeEach(() => {
+    leaveBalanceRepo = {
+      findByEmployee: jest.fn().mockResolvedValue([
+        { opening_balance: 0, allocated: 12, carry_forward: 0, used: 2, pending: 1 },
+      ]),
+    };
+    service = new LeaveService(
+      {} as any,
+      {} as any,
+      leaveBalanceRepo,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+    );
+  });
+
+  it('team scope: succeeds for an in-scope target, 403s for an out-of-scope one', async () => {
+    const ctxIn = makeContext({ scope: { kind: 'team', employeeIds: new Set(['target-1']) } });
+    await expect(service.getLeaveBalance(ctxIn, 'target-1')).resolves.toBeDefined();
+
+    const ctxOut = makeContext({ scope: { kind: 'team', employeeIds: new Set(['someone-else']) } });
+    await expect(service.getLeaveBalance(ctxOut, 'target-1')).rejects.toThrow(ForbiddenException);
+  });
+
+  it('self scope: 403s for anyone other than yourself', async () => {
+    const ctx = makeContext({ employeeId: 'someone-else', scope: SELF_SCOPE });
+    await expect(service.getLeaveBalance(ctx, 'target-1')).rejects.toThrow(ForbiddenException);
+    expect(leaveBalanceRepo.findByEmployee).not.toHaveBeenCalled();
+  });
+
+  it('org scope: succeeds for any target', async () => {
+    const ctx = makeContext({ scope: ORG_SCOPE });
+    await expect(service.getLeaveBalance(ctx, 'target-1')).resolves.toBeDefined();
+  });
+});
+
+describe('LeaveService.getEmployeeLeaveRequests — scope-gated by employeeId (P1-10)', () => {
+  let leaveRequestsRepo: any;
+  let service: LeaveService;
+
+  beforeEach(() => {
+    leaveRequestsRepo = { findByEmployee: jest.fn().mockResolvedValue([]) };
+    service = new LeaveService(
+      {} as any,
+      leaveRequestsRepo,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+    );
+  });
+
+  it('team scope: succeeds for an in-scope target, 403s for an out-of-scope one', async () => {
+    const ctxIn = makeContext({ scope: { kind: 'team', employeeIds: new Set(['target-1']) } });
+    await expect(service.getEmployeeLeaveRequests(ctxIn, 'target-1')).resolves.toEqual([]);
+
+    const ctxOut = makeContext({ scope: { kind: 'team', employeeIds: new Set(['someone-else']) } });
+    await expect(service.getEmployeeLeaveRequests(ctxOut, 'target-1')).rejects.toThrow(
+      ForbiddenException,
+    );
+  });
+
+  it('org scope: succeeds for any target', async () => {
+    const ctx = makeContext({ scope: ORG_SCOPE });
+    await expect(service.getEmployeeLeaveRequests(ctx, 'target-1')).resolves.toEqual([]);
+  });
+});
+
+/**
  * P1-07 — verification, but the task as originally written doesn't match
  * this module. There is no manager-facing "all leave requests in my scope"
  * list to scope-filter, parallel to Employees' getAll:
