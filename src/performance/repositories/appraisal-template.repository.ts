@@ -47,7 +47,8 @@ export class AppraisalTemplateRepository extends BaseRepository {
       ORDER BY name;
     `;
 
-    return this.query<any>(sql, [tenantContext.organizationId], executor);
+    const result = await this.query<any>(sql, [tenantContext.organizationId], executor);
+    return result.rows;
   }
 
   async findByType(
@@ -61,7 +62,8 @@ export class AppraisalTemplateRepository extends BaseRepository {
       ORDER BY name;
     `;
 
-    return this.query<any>(sql, [tenantContext.organizationId, templateType], executor);
+    const result = await this.query<any>(sql, [tenantContext.organizationId, templateType], executor);
+    return result.rows;
   }
 
   async update(

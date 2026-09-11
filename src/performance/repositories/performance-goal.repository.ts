@@ -56,7 +56,8 @@ export class PerformanceGoalRepository extends BaseRepository {
       ORDER BY created_at DESC;
     `;
 
-    return this.query<any>(sql, [tenantContext.organizationId, employeeId], executor);
+    const result = await this.query<any>(sql, [tenantContext.organizationId, employeeId], executor);
+    return result.rows;
   }
 
   async findByEmployeeAndCycle(
@@ -71,7 +72,8 @@ export class PerformanceGoalRepository extends BaseRepository {
       ORDER BY created_at DESC;
     `;
 
-    return this.query<any>(sql, [tenantContext.organizationId, employeeId, cycleId], executor);
+    const result = await this.query<any>(sql, [tenantContext.organizationId, employeeId, cycleId], executor);
+    return result.rows;
   }
 
   async findByStatus(
@@ -85,7 +87,8 @@ export class PerformanceGoalRepository extends BaseRepository {
       ORDER BY created_at DESC;
     `;
 
-    return this.query<any>(sql, [tenantContext.organizationId, status], executor);
+    const result = await this.query<any>(sql, [tenantContext.organizationId, status], executor);
+    return result.rows;
   }
 
   async update(
