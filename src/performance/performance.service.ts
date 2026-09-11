@@ -336,6 +336,13 @@ export class PerformanceService {
     if (appraisal.status !== 'submitted') {
       throw new BadRequestException('Only submitted appraisals can be reviewed');
     }
+    // Same standard check as every other employee-keyed route in this
+    // module - no directOnly-style narrowing. main's {kind:'team'} scope is
+    // already a flat manager_scopes-assigned set, not a recursive
+    // org-chart subtree, so there's no "direct report vs. subtree report"
+    // distinction to be broad or narrow about the way the original plan
+    // assumed.
+    assertActingOnEmployee(tenantContext, appraisal.employeeId);
 
     const updated = await this.appraisalRepository.update(tenantContext, appraisalId, {
       status: 'reviewed',
@@ -364,6 +371,10 @@ export class PerformanceService {
     if (appraisal.status !== 'reviewed') {
       throw new BadRequestException('Only reviewed appraisals can be finalized');
     }
+    // Found alongside reviewAppraisal - same gap, same fix. Not explicitly
+    // named in the original task, but there's no reason finalize should be
+    // less guarded than review for the same resource.
+    assertActingOnEmployee(tenantContext, appraisal.employeeId);
 
     const updated = await this.appraisalRepository.update(tenantContext, appraisalId, {
       status: 'finalized',
