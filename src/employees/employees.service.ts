@@ -99,6 +99,21 @@ export class EmployeesService {
     return this.repository.findAll(tenantContext, { ...filters, scopedIds });
   }
 
+  /**
+   * Restricted fields only — never called from getById/getAll. Gated by
+   * employee.sensitive.read at the controller; assertActingOnEmployee still
+   * decides which specific employee ids a given caller can reach through it,
+   * independent of whether they hold the permission at all.
+   */
+  async getSensitive(tenantContext: TenantContext, id: string) {
+    const employee = await this.repository.findById(tenantContext, id);
+    if (!employee) {
+      throw new NotFoundException('Employee not found');
+    }
+    assertActingOnEmployee(tenantContext, id);
+    return (await this.repository.findSensitiveFields(tenantContext, id)) ?? null;
+  }
+
   async update(tenantContext: TenantContext, id: string, dto: UpdateEmployeeDTO) {
     const employee = await this.repository.findById(tenantContext, id);
     if (!employee) {
