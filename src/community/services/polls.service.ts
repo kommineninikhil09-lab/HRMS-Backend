@@ -74,8 +74,15 @@ export class PollsService {
     return closed;
   }
 
-  async recordVote(pollOptionId: string, pollId: string): Promise<void> {
+  async recordVote(tenantContext: TenantContext, pollOptionId: string, pollId: string): Promise<void> {
     await this.pollsRepository.incrementVoteCount(pollOptionId);
     await this.pollsRepository.incrementTotalVotes(pollId);
+
+    await this.auditService.record(tenantContext, {
+      action: 'UPDATE',
+      entity_type: 'Poll',
+      entity_id: pollId,
+      new_value: { poll_option_id: pollOptionId },
+    });
   }
 }

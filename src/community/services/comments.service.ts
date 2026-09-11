@@ -84,11 +84,29 @@ export class CommentsService {
 
   async addLike(tenantContext: TenantContext, commentId: string): Promise<number> {
     await this.getComment(tenantContext, commentId);
-    return this.commentsRepository.incrementLikesCount(commentId);
+    const count = await this.commentsRepository.incrementLikesCount(commentId);
+
+    await this.auditService.record(tenantContext, {
+      action: 'UPDATE',
+      entity_type: 'Comment',
+      entity_id: commentId,
+      new_value: { likes_count: count },
+    });
+
+    return count;
   }
 
   async removeLike(tenantContext: TenantContext, commentId: string): Promise<number> {
     await this.getComment(tenantContext, commentId);
-    return this.commentsRepository.decrementLikesCount(commentId);
+    const count = await this.commentsRepository.decrementLikesCount(commentId);
+
+    await this.auditService.record(tenantContext, {
+      action: 'UPDATE',
+      entity_type: 'Comment',
+      entity_id: commentId,
+      new_value: { likes_count: count },
+    });
+
+    return count;
   }
 }
