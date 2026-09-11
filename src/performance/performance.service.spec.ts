@@ -274,3 +274,156 @@ describe('PerformanceService — review/finalize scope-gating (P1-17)', () => {
     });
   });
 });
+
+describe('PerformanceService.createAppraisal — scope-gating', () => {
+  let cycleRepository: any;
+  let templateRepository: any;
+  let appraisalRepository: any;
+  let service: PerformanceService;
+
+  beforeEach(() => {
+    cycleRepository = { findById: jest.fn().mockResolvedValue({ id: 'cycle-1' }) };
+    templateRepository = { findById: jest.fn().mockResolvedValue({ id: 'template-1' }) };
+    appraisalRepository = {
+      create: jest.fn((_tc: any, data: any) => Promise.resolve({ id: 'appraisal-1', ...data })),
+    };
+    const auditService = { record: jest.fn().mockResolvedValue(undefined) };
+    service = new PerformanceService(
+      cycleRepository,
+      templateRepository,
+      appraisalRepository,
+      {} as any,
+      {} as any,
+      {} as any,
+      auditService,
+      {} as any,
+    );
+  });
+
+  it('self scope: creating an appraisal for yourself succeeds, for someone else 403s', async () => {
+    const ctxSelf = makeContext({ employeeId: 'self-employee-1', scope: SELF_SCOPE });
+    await expect(
+      service.createAppraisal(ctxSelf, { cycle_id: 'cycle-1', template_id: 'template-1', employee_id: 'self-employee-1' }),
+    ).resolves.toBeDefined();
+
+    const ctxOther = makeContext({ employeeId: 'self-employee-1', scope: SELF_SCOPE });
+    await expect(
+      service.createAppraisal(ctxOther, { cycle_id: 'cycle-1', template_id: 'template-1', employee_id: 'someone-else' }),
+    ).rejects.toThrow(ForbiddenException);
+    expect(appraisalRepository.create).not.toHaveBeenCalledWith(
+      ctxOther,
+      expect.objectContaining({ employee_id: 'someone-else' }),
+    );
+  });
+
+  it('team scope: succeeds for an in-scope target, 403s for a non-report', async () => {
+    const ctxIn = makeContext({ scope: { kind: 'team', employeeIds: new Set(['target-1']) } });
+    await expect(
+      service.createAppraisal(ctxIn, { cycle_id: 'cycle-1', template_id: 'template-1', employee_id: 'target-1' }),
+    ).resolves.toBeDefined();
+
+    const ctxOut = makeContext({ scope: { kind: 'team', employeeIds: new Set(['not-a-report']) } });
+    await expect(
+      service.createAppraisal(ctxOut, { cycle_id: 'cycle-1', template_id: 'template-1', employee_id: 'target-1' }),
+    ).rejects.toThrow(ForbiddenException);
+  });
+
+  it('org scope: succeeds for any employee_id', async () => {
+    const ctx = makeContext({ scope: ORG_SCOPE });
+    await expect(
+      service.createAppraisal(ctx, { cycle_id: 'cycle-1', template_id: 'template-1', employee_id: 'anyone' }),
+    ).resolves.toBeDefined();
+  });
+});
+
+describe('PerformanceService.submitAppraisal — scope-gating', () => {
+  let appraisalRepository: any;
+  let service: PerformanceService;
+
+  const draftAppraisal = { id: 'appraisal-1', employeeId: 'target-employee-1', status: 'draft' };
+
+  beforeEach(() => {
+    appraisalRepository = {
+      findById: jest.fn().mockResolvedValue(draftAppraisal),
+      update: jest.fn((_tc: any, _id: string, patch: any) => Promise.resolve({ ...draftAppraisal, ...patch })),
+    };
+    const auditService = { record: jest.fn().mockResolvedValue(undefined) };
+    service = new PerformanceService(
+      {} as any,
+      {} as any,
+      appraisalRepository,
+      {} as any,
+      {} as any,
+      {} as any,
+      auditService,
+      {} as any,
+    );
+  });
+
+  it('throws NotFoundException before any scope check for a nonexistent appraisal', async () => {
+    appraisalRepository.findById.mockResolvedValueOnce(undefined);
+    await expect(
+      service.submitAppraisal(makeContext({ scope: ORG_SCOPE }), 'missing'),
+    ).rejects.toThrow(NotFoundException);
+  });
+
+  it('team scope: succeeds for an in-scope target, 403s for an out-of-scope one', async () => {
+    const ctxIn = makeContext({ scope: { kind: 'team', employeeIds: new Set(['target-employee-1']) } });
+    await expect(service.submitAppraisal(ctxIn, 'appraisal-1')).resolves.toBeDefined();
+
+    const ctxOut = makeContext({ scope: { kind: 'team', employeeIds: new Set(['someone-else']) } });
+    await expect(service.submitAppraisal(ctxOut, 'appraisal-1')).rejects.toThrow(ForbiddenException);
+  });
+
+  it('org scope: succeeds regardless of whose appraisal it is', async () => {
+    const ctx = makeContext({ scope: ORG_SCOPE });
+    await expect(service.submitAppraisal(ctx, 'appraisal-1')).resolves.toBeDefined();
+  });
+});
+
+describe('PerformanceService.updateGoal — scope-gating', () => {
+  let goalRepository: any;
+  let service: PerformanceService;
+
+  const goal = { id: 'goal-1', employeeId: 'target-employee-1', goal_title: 'Old title' };
+
+  beforeEach(() => {
+    goalRepository = {
+      findById: jest.fn().mockResolvedValue(goal),
+      update: jest.fn((_tc: any, _id: string, patch: any) => Promise.resolve({ ...goal, ...patch })),
+    };
+    const auditService = { record: jest.fn().mockResolvedValue(undefined) };
+    service = new PerformanceService(
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      goalRepository,
+      auditService,
+      {} as any,
+    );
+  });
+
+  it('throws NotFoundException before any scope check for a nonexistent goal', async () => {
+    goalRepository.findById.mockResolvedValueOnce(undefined);
+    await expect(
+      service.updateGoal(makeContext({ scope: ORG_SCOPE }), 'missing', {}),
+    ).rejects.toThrow(NotFoundException);
+  });
+
+  it('team scope: succeeds for an in-scope target, 403s for an out-of-scope one', async () => {
+    const ctxIn = makeContext({ scope: { kind: 'team', employeeIds: new Set(['target-employee-1']) } });
+    await expect(service.updateGoal(ctxIn, 'goal-1', { goal_title: 'New title' })).resolves.toBeDefined();
+
+    const ctxOut = makeContext({ scope: { kind: 'team', employeeIds: new Set(['someone-else']) } });
+    await expect(service.updateGoal(ctxOut, 'goal-1', { goal_title: 'New title' })).rejects.toThrow(
+      ForbiddenException,
+    );
+  });
+
+  it('org scope: succeeds regardless of whose goal it is', async () => {
+    const ctx = makeContext({ scope: ORG_SCOPE });
+    await expect(service.updateGoal(ctx, 'goal-1', { goal_title: 'New title' })).resolves.toBeDefined();
+  });
+});
