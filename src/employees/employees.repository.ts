@@ -3,6 +3,23 @@ import { BaseRepository } from '../database/base.repository';
 import { TenantContext } from '../database/tenant-context';
 import { Pool, PoolClient } from 'pg';
 
+export interface EmployeeSensitiveFields {
+  address?: string;
+  city?: string;
+  state?: string;
+  postal_code?: string;
+  country?: string;
+  emergency_contact_name?: string;
+  emergency_contact_phone?: string;
+  emergency_contact_relationship?: string;
+  bank_account_number?: string;
+  bank_name?: string;
+  ifsc_code?: string;
+  base_salary?: string;
+  currency?: string;
+  pay_frequency?: string;
+}
+
 export interface Employee {
   id: string;
   organization_id: string;
@@ -126,6 +143,32 @@ export class EmployeesRepository extends BaseRepository {
     query += ` ORDER BY first_name, last_name`;
     const result = await (executor || this.pool).query(query, values);
     return result.rows as Employee[];
+  }
+
+  /**
+   * Restricted fields (bank details, salary, home address, emergency
+   * contact), sourced from `employee_profiles` — a table this repository
+   * otherwise never touches. Deliberately never merged into `findById` or
+   * `findAll`; this is the one query that's allowed to return them, gated by
+   * `employee.sensitive.read` at the controller. Returns null when no
+   * profile row exists yet for this employee (not an error — the employee
+   * record itself may still exist).
+   */
+  async findSensitiveFields(
+    tenantContext: TenantContext,
+    employeeId: string,
+    executor?: Pool | PoolClient,
+  ): Promise<EmployeeSensitiveFields | undefined> {
+    const query = `
+      SELECT address, city, state, postal_code, country,
+             emergency_contact_name, emergency_contact_phone, emergency_contact_relationship,
+             bank_account_number, bank_name, ifsc_code,
+             base_salary, currency, pay_frequency
+      FROM employee_profiles
+      WHERE employee_id = $1 AND organization_id = $2
+    `;
+    const result = await (executor || this.pool).query(query, [employeeId, tenantContext.organizationId]);
+    return result.rows[0] as EmployeeSensitiveFields | undefined;
   }
 
   async update(tenantContext: TenantContext, id: string, data: Partial<Employee>, executor?: Pool | PoolClient) {

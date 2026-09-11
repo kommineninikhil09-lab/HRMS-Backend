@@ -4,6 +4,7 @@ import { EmploymentHistoryRepository } from '../employment-history/employment-hi
 import { TenantContext } from '../database/tenant-context';
 import { AuditService } from '../audit/audit.service';
 import { TransactionService } from '../database/transaction.service';
+import { assertActingOnEmployee } from '../common/scope/scope.util';
 
 export interface CreateEmployeeDTO {
   employee_code: string;
@@ -94,6 +95,21 @@ export class EmployeesService {
 
   async getAll(tenantContext: TenantContext, filters?: { status?: string; department_id?: string }) {
     return this.repository.findAll(tenantContext, filters);
+  }
+
+  /**
+   * Restricted fields only — never called from getById/getAll. Gated by
+   * employee.sensitive.read at the controller; assertActingOnEmployee still
+   * decides which specific employee ids a given caller can reach through it,
+   * independent of whether they hold the permission at all.
+   */
+  async getSensitive(tenantContext: TenantContext, id: string) {
+    const employee = await this.repository.findById(tenantContext, id);
+    if (!employee) {
+      throw new NotFoundException('Employee not found');
+    }
+    assertActingOnEmployee(tenantContext, id);
+    return (await this.repository.findSensitiveFields(tenantContext, id)) ?? null;
   }
 
   async update(tenantContext: TenantContext, id: string, dto: UpdateEmployeeDTO) {
