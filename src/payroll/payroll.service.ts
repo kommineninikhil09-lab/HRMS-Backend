@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
 import { TenantContext } from '../database/tenant-context';
 import { TransactionService } from '../database/transaction.service';
 import { AuditService } from '../audit/audit.service';
@@ -158,6 +158,10 @@ export class PayrollService {
   }
 
   async approveSalarySlip(tenantContext: TenantContext, slipId: string) {
+    if (tenantContext.scope?.kind !== 'org') {
+      throw new ForbiddenException('payroll approval requires organization-wide scope');
+    }
+
     const slip = await this.salarySlipRepository.findById(tenantContext, slipId);
     if (!slip) {
       throw new NotFoundException('Salary slip not found');
@@ -185,6 +189,10 @@ export class PayrollService {
   }
 
   async markSalarySlipAsPaid(tenantContext: TenantContext, slipId: string) {
+    if (tenantContext.scope?.kind !== 'org') {
+      throw new ForbiddenException('marking a slip paid requires organization-wide scope');
+    }
+
     const slip = await this.salarySlipRepository.findById(tenantContext, slipId);
     if (!slip) {
       throw new NotFoundException('Salary slip not found');
