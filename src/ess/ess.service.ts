@@ -1,4 +1,5 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Pool, PoolClient } from 'pg';
 import { EmployeesRepository } from '../employees/employees.repository';
 import { TenantContext } from '../database/tenant-context';
 import { AuditService } from '../audit/audit.service';
@@ -44,8 +45,12 @@ export class ESSService {
     private readonly transactionService: TransactionService,
   ) {}
 
-  async getEmployeeProfile(tenantContext: TenantContext, employeeId: string): Promise<EmployeeESS> {
-    const employee = await this.employeesRepository.findById(tenantContext, employeeId);
+  async getEmployeeProfile(
+    tenantContext: TenantContext,
+    employeeId: string,
+    executor?: Pool | PoolClient,
+  ): Promise<EmployeeESS> {
+    const employee = await this.employeesRepository.findById(tenantContext, employeeId, executor);
     if (!employee) {
       throw new NotFoundException('Employee not found');
     }
@@ -116,7 +121,7 @@ export class ESSService {
         client,
       );
 
-      return this.getEmployeeProfile(tenantContext, employeeId);
+      return this.getEmployeeProfile(tenantContext, employeeId, client);
     });
   }
 
