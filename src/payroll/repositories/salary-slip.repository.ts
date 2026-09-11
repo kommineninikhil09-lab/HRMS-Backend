@@ -99,13 +99,18 @@ export class SalarySlipRepository extends BaseRepository {
   async findByStatus(
     tenantContext: TenantContext,
     status: string,
+    scopedIds?: string[] | null,
     executor?: Pool | PoolClient,
   ): Promise<SalarySlip[]> {
-    const result = await this.query<SalarySlip>(
-      'SELECT * FROM salary_slips WHERE organization_id = $1 AND status = $2 ORDER BY month DESC',
-      [tenantContext.organizationId, status],
-      executor,
-    );
+    const values: any[] = [tenantContext.organizationId, status];
+    let sql = 'SELECT * FROM salary_slips WHERE organization_id = $1 AND status = $2';
+    if (scopedIds) {
+      values.push(scopedIds);
+      sql += ` AND employee_id = ANY($${values.length}::uuid[])`;
+    }
+    sql += ' ORDER BY month DESC';
+
+    const result = await this.query<SalarySlip>(sql, values, executor);
     return result.rows;
   }
 
@@ -122,6 +127,18 @@ export class SalarySlipRepository extends BaseRepository {
     if (data.status) {
       fields.push(`status = $${paramCount++}`);
       values.push(data.status);
+    }
+    if (data.gross_amount !== undefined) {
+      fields.push(`gross_amount = $${paramCount++}`);
+      values.push(data.gross_amount);
+    }
+    if (data.total_deductions !== undefined) {
+      fields.push(`total_deductions = $${paramCount++}`);
+      values.push(data.total_deductions);
+    }
+    if (data.net_amount !== undefined) {
+      fields.push(`net_amount = $${paramCount++}`);
+      values.push(data.net_amount);
     }
     if (data.approved_by) {
       fields.push(`approved_by = $${paramCount++}`);
