@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
 import { PostsRepository, Post, CreatePostDto } from '../repositories/posts.repository';
 import { TenantContext } from '../../database/tenant-context';
 import { AuditService } from '../../audit/audit.service';
@@ -58,6 +58,15 @@ export class PostsService {
 
   async deletePost(tenantContext: TenantContext, postId: string): Promise<void> {
     const post = await this.getPost(tenantContext, postId);
+
+    // post.delete alone isn't enough to delete someone else's post - the
+    // caller must either be the author, or a moderator (org-wide scope; the
+    // route already confirmed they hold post.delete before this ran).
+    const isOwner = post.user_id === tenantContext.userId;
+    const isModerator = tenantContext.scope?.kind === 'org';
+    if (!isOwner && !isModerator) {
+      throw new ForbiddenException('must be the post author or a moderator to delete this post');
+    }
 
     await this.postsRepository.delete(tenantContext, postId);
 
