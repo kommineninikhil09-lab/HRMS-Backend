@@ -8,6 +8,7 @@ import { PerformanceAppraisalRepository } from './repositories/performance-appra
 import { AppraisalRatingRepository } from './repositories/appraisal-rating.repository';
 import { CompetencyRepository } from './repositories/competency.repository';
 import { PerformanceGoalRepository } from './repositories/performance-goal.repository';
+import { assertActingOnEmployee } from '../common/scope/scope.util';
 
 @Injectable()
 export class PerformanceService {
@@ -180,6 +181,7 @@ export class PerformanceService {
     if (!appraisal) {
       throw new NotFoundException('Performance appraisal not found');
     }
+    assertActingOnEmployee(tenantContext, appraisal.employee_id);
     return appraisal;
   }
 
