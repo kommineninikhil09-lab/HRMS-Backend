@@ -134,6 +134,8 @@ export class PerformanceService {
 
   // Performance Appraisals (Core)
   async createAppraisal(tenantContext: TenantContext, dto: any) {
+    assertActingOnEmployee(tenantContext, dto.employee_id);
+
     const cycle = await this.cycleRepository.findById(tenantContext, dto.cycle_id);
     if (!cycle) {
       throw new NotFoundException('Performance cycle not found');
@@ -199,6 +201,13 @@ export class PerformanceService {
       if (!appraisal) {
         throw new NotFoundException('Performance appraisal not found');
       }
+
+      // Deliberately no assertActingOnEmployee here, unlike the other
+      // employee-keyed routes in this module. Ratings are multi-rater
+      // (self/manager/peer/HR - see recalculateAppraisalRating below), and a
+      // peer or HR rater legitimately falls outside the ratee's own
+      // management scope. Restricting this to scope would block exactly the
+      // raters the feature depends on.
 
       const rating = await this.ratingRepository.addRating(
         tenantContext,
@@ -310,6 +319,11 @@ export class PerformanceService {
     if (appraisal.status !== 'draft') {
       throw new BadRequestException('Only draft appraisals can be submitted');
     }
+    // Gated by performance.write, the same administrative permission as
+    // createAppraisal - not a self-service "submit my own appraisal" action -
+    // so this needs the same scope check as every other employee-keyed route
+    // in this module.
+    assertActingOnEmployee(tenantContext, appraisal.employeeId);
 
     const updated = await this.appraisalRepository.update(tenantContext, appraisalId, {
       status: 'submitted',
@@ -421,6 +435,9 @@ export class PerformanceService {
     if (!old) {
       throw new NotFoundException('Performance goal not found');
     }
+    // PerformanceGoalRepository goes through BaseRepository.queryOne, which
+    // camelCases every row - the real field here is employeeId.
+    assertActingOnEmployee(tenantContext, (old as any).employeeId);
 
     const updated = await this.goalRepository.update(tenantContext, goalId, {
       goal_title: dto.goal_title,
