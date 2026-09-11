@@ -59,29 +59,41 @@ export class PerformanceAppraisalRepository extends BaseRepository {
   async findByCycle(
     tenantContext: TenantContext,
     cycleId: string,
+    scopedIds?: string[] | null,
     executor?: Pool | PoolClient,
   ) {
-    const sql = `
+    const values: any[] = [tenantContext.organizationId, cycleId];
+    let sql = `
       SELECT * FROM performance_appraisals
       WHERE organization_id = $1 AND cycle_id = $2
-      ORDER BY created_at DESC;
     `;
+    if (scopedIds) {
+      values.push(scopedIds);
+      sql += ` AND employee_id = ANY($${values.length}::uuid[])`;
+    }
+    sql += ` ORDER BY created_at DESC;`;
 
-    return this.query<any>(sql, [tenantContext.organizationId, cycleId], executor);
+    return this.query<any>(sql, values, executor);
   }
 
   async findByStatus(
     tenantContext: TenantContext,
     status: string,
+    scopedIds?: string[] | null,
     executor?: Pool | PoolClient,
   ) {
-    const sql = `
+    const values: any[] = [tenantContext.organizationId, status];
+    let sql = `
       SELECT * FROM performance_appraisals
       WHERE organization_id = $1 AND status = $2
-      ORDER BY created_at DESC;
     `;
+    if (scopedIds) {
+      values.push(scopedIds);
+      sql += ` AND employee_id = ANY($${values.length}::uuid[])`;
+    }
+    sql += ` ORDER BY created_at DESC;`;
 
-    return this.query<any>(sql, [tenantContext.organizationId, status], executor);
+    return this.query<any>(sql, values, executor);
   }
 
   async findByEmployee(
