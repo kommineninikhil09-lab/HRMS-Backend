@@ -976,6 +976,35 @@ describe('Authorization scope matrix (E2E)', () => {
     });
   });
 
+  describe('GET /users/me — resolved scope, serialized for the frontend (P2-04)', () => {
+    it('org scope: reports {kind: "org"}', async () => {
+      const res = await request(http)
+        .get('/api/v1/users/me')
+        .set('Authorization', `Bearer ${orgToken}`)
+        .expect(200);
+      expect(res.body.data.scope).toEqual({ kind: 'org' });
+    });
+
+    it('team scope: reports {kind: "team", employeeIds}, a plain array (Sets don\'t survive JSON)', async () => {
+      const res = await request(http)
+        .get('/api/v1/users/me')
+        .set('Authorization', `Bearer ${teamToken}`)
+        .expect(200);
+      expect(res.body.data.scope.kind).toBe('team');
+      expect(Array.isArray(res.body.data.scope.employeeIds)).toBe(true);
+      expect(res.body.data.scope.employeeIds).toContain(inScopeEmployeeId);
+      expect(res.body.data.scope.employeeIds).not.toContain(outOfScopeEmployeeId);
+    });
+
+    it('self scope: reports {kind: "self"}', async () => {
+      const res = await request(http)
+        .get('/api/v1/users/me')
+        .set('Authorization', `Bearer ${selfToken}`)
+        .expect(200);
+      expect(res.body.data.scope).toEqual({ kind: 'self' });
+    });
+  });
+
   describe('Audit — logs locked to org scope (P1-21)', () => {
     it('team scope gets 403 even with audit.read granted', async () => {
       await request(http)
