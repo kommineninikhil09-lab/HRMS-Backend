@@ -15,16 +15,19 @@ function makeContext(overrides: Partial<TenantContext> = {}): TenantContext {
 
 describe('NotificationsService', () => {
   let repository: any;
+  let eventsService: any;
   let service: NotificationsService;
 
   beforeEach(() => {
     repository = {
+      create: jest.fn().mockResolvedValue({ id: 'n-1' }),
       findRecentForUser: jest.fn().mockResolvedValue([]),
       countUnreadForUser: jest.fn().mockResolvedValue(0),
       markRead: jest.fn(),
       markAllRead: jest.fn().mockResolvedValue(0),
     };
-    service = new NotificationsService(repository);
+    eventsService = { onNotification: jest.fn() };
+    service = new NotificationsService(repository, eventsService);
   });
 
   describe('listRecent', () => {
@@ -78,6 +81,44 @@ describe('NotificationsService', () => {
 
       const ctx = makeContext();
       await expect(service.markAllRead(ctx)).resolves.toEqual({ markedCount: 5 });
+    });
+  });
+
+  describe('onModuleInit / notification event handling (P3-02)', () => {
+    it('subscribes to EventsService on module init', () => {
+      service.onModuleInit();
+      expect(eventsService.onNotification).toHaveBeenCalledWith(expect.any(Function));
+    });
+
+    it('persists a row for each event the registered handler receives', async () => {
+      service.onModuleInit();
+      const handler = eventsService.onNotification.mock.calls[0][0];
+
+      await handler({
+        organizationId: 'org-1',
+        userId: 'user-1',
+        type: 'leave.needs_approval',
+        title: 'Leave request awaiting your approval',
+        body: 'Jane Doe requested 2 day(s) of leave.',
+      });
+
+      expect(repository.create).toHaveBeenCalledWith(
+        'org-1',
+        'user-1',
+        'leave.needs_approval',
+        'Leave request awaiting your approval',
+        'Jane Doe requested 2 day(s) of leave.',
+      );
+    });
+
+    it('swallows a persistence failure rather than letting it propagate', async () => {
+      repository.create.mockRejectedValue(new Error('db down'));
+      service.onModuleInit();
+      const handler = eventsService.onNotification.mock.calls[0][0];
+
+      await expect(
+        handler({ organizationId: 'org-1', userId: 'user-1', type: 'payslip.generated', title: 'x' }),
+      ).resolves.toBeUndefined();
     });
   });
 });

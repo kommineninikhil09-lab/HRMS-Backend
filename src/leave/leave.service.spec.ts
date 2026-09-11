@@ -290,8 +290,10 @@ describe('LeaveService.getLeaveRequestById — resource-keyed authorization (P1-
 describe('LeaveService.approveLeaveRequest — assigned-approver gate, not scope (P1-09)', () => {
   let leaveRequestsRepo: any;
   let leaveBalanceRepo: any;
+  let employeesRepo: any;
   let auditService: any;
   let transactionService: any;
+  let eventsService: any;
   let service: LeaveService;
 
   const leaveRequest = {
@@ -311,17 +313,22 @@ describe('LeaveService.approveLeaveRequest — assigned-approver gate, not scope
     leaveBalanceRepo = {
       findByEmployeeAndType: jest.fn().mockResolvedValue(null),
     };
+    employeesRepo = {
+      findById: jest.fn().mockResolvedValue({ id: 'target-employee-1', user_id: 'requester-user-1' }),
+    };
     auditService = { record: jest.fn().mockResolvedValue(undefined) };
     transactionService = { runInTransaction: jest.fn((cb: any) => cb({})) };
+    eventsService = { emitNotification: jest.fn() };
     service = new LeaveService(
       {} as any,
       leaveRequestsRepo,
       leaveBalanceRepo,
-      {} as any,
+      employeesRepo,
       {} as any,
       {} as any,
       auditService,
       transactionService,
+      eventsService,
     );
   });
 
@@ -338,6 +345,9 @@ describe('LeaveService.approveLeaveRequest — assigned-approver gate, not scope
       approve: true,
     } as any);
     expect(result.status).toBe('approved');
+    expect(eventsService.emitNotification).toHaveBeenCalledWith(
+      expect.objectContaining({ userId: 'requester-user-1', type: 'leave.decided', title: expect.stringContaining('approved') }),
+    );
   });
 
   it('a caller with org-wide scope who is NOT the assigned approver still 403s — scope never overrides the assignment', async () => {

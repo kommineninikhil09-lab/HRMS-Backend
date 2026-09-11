@@ -1,6 +1,8 @@
 import { Module } from '@nestjs/common';
 import { DatabaseModule } from '../database/database.module';
 import { AuditModule } from '../audit/audit.module';
+import { EmployeesModule } from '../employees/employees.module';
+import { EventsModule } from '../common/events/events.module';
 import { PayrollController } from './payroll.controller';
 import { PayrollService } from './payroll.service';
 import { SalaryStructureRepository } from './repositories/salary-structure.repository';
@@ -11,7 +13,7 @@ import { StructureComponentRepository } from './repositories/structure-component
 import { SlipComponentRepository } from './repositories/slip-component.repository';
 
 @Module({
-  imports: [DatabaseModule, AuditModule],
+  imports: [DatabaseModule, AuditModule, EmployeesModule, EventsModule],
   controllers: [PayrollController],
   providers: [
     PayrollService,

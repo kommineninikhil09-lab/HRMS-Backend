@@ -1,13 +1,40 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, OnModuleInit } from '@nestjs/common';
 import { TenantContext } from '../database/tenant-context';
 import { NotificationsRepository } from './notifications.repository';
+import { EventsService, NotificationEvent } from '../common/events/events.service';
 
 const DEFAULT_LIMIT = 20;
 const MAX_LIMIT = 50;
 
 @Injectable()
-export class NotificationsService {
-  constructor(private readonly repository: NotificationsRepository) {}
+export class NotificationsService implements OnModuleInit {
+  private readonly logger = new Logger(NotificationsService.name);
+
+  constructor(
+    private readonly repository: NotificationsRepository,
+    private readonly eventsService: EventsService,
+  ) {}
+
+  onModuleInit() {
+    this.eventsService.onNotification((event) => this.handleNotificationEvent(event));
+  }
+
+  private async handleNotificationEvent(event: NotificationEvent): Promise<void> {
+    try {
+      await this.repository.create(
+        event.organizationId,
+        event.userId,
+        event.type,
+        event.title,
+        event.body,
+      );
+    } catch (err) {
+      // A failed notification write must never surface as a failure of
+      // whatever business action triggered it - this listener runs
+      // decoupled from that action's own request/transaction.
+      this.logger.error(`Failed to persist notification (type=${event.type})`, err as Error);
+    }
+  }
 
   async listRecent(tenantContext: TenantContext, limit?: number) {
     const safeLimit = Math.min(Math.max(limit ?? DEFAULT_LIMIT, 1), MAX_LIMIT);
