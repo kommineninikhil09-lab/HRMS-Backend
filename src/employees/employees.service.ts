@@ -27,7 +27,10 @@ export interface UpdateEmployeeDTO {
   first_name?: string;
   last_name?: string;
   work_email?: string;
+  personal_email?: string;
   phone?: string;
+  dob?: string;
+  gender?: string;
   department_id?: string;
   location_id?: string;
   designation_id?: string;
@@ -128,6 +131,10 @@ export class EmployeesService {
       }
     }
 
+    if (dto.manager_id && dto.manager_id !== employee.manager_id) {
+      await this.assertNoManagerCycle(tenantContext, id, dto.manager_id);
+    }
+
     return this.transactionService.runInTransaction(async (client) => {
       const oldValue = { ...employee };
       const updated = await this.repository.update(tenantContext, id, dto, client);
@@ -183,5 +190,41 @@ export class EmployeesService {
 
       await this.repository.delete(tenantContext, id, client);
     });
+  }
+
+  /**
+   * Rejects a manager_id change that would make `employeeId` its own
+   * transitive manager. Walks the new manager's chain up to a depth cap
+   * (defence against a pre-existing cycle elsewhere in the graph hanging
+   * this check) rather than assuming the existing data is acyclic.
+   */
+  private async assertNoManagerCycle(
+    tenantContext: TenantContext,
+    employeeId: string,
+    newManagerId: string,
+  ): Promise<void> {
+    if (newManagerId === employeeId) {
+      throw new BadRequestException('An employee cannot be their own manager');
+    }
+
+    const seen = new Set<string>();
+    let currentId: string | undefined = newManagerId;
+
+    for (let depth = 0; currentId && depth < 50; depth++) {
+      if (currentId === employeeId) {
+        throw new BadRequestException(
+          'This manager change would create a reporting cycle',
+        );
+      }
+      if (seen.has(currentId)) {
+        // A cycle exists elsewhere in the graph, unrelated to this update —
+        // not this change's problem to fix.
+        return;
+      }
+      seen.add(currentId);
+
+      const manager = await this.repository.findById(tenantContext, currentId);
+      currentId = manager?.manager_id;
+    }
   }
 }

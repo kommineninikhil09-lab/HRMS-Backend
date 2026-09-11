@@ -1,4 +1,4 @@
-import { ForbiddenException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { EmployeesService } from './employees.service';
 import { TenantContext, ORG_SCOPE, SELF_SCOPE } from '../database/tenant-context';
 
@@ -191,5 +191,58 @@ describe('EmployeesService.getSensitive (P1-03)', () => {
     repository.findSensitiveFields.mockResolvedValueOnce(undefined);
     const ctx = makeContext({ scope: ORG_SCOPE });
     await expect(service.getSensitive(ctx, targetEmployee.id)).resolves.toBeNull();
+  });
+});
+
+describe('EmployeesService.update — manager cycle guard', () => {
+  let repository: any;
+  let historyRepository: any;
+  let auditService: any;
+  let transactionService: any;
+  let service: EmployeesService;
+
+  const employees: Record<string, any> = {
+    'emp-a': { id: 'emp-a', manager_id: 'emp-b', status: 'active' },
+    'emp-b': { id: 'emp-b', manager_id: 'emp-c', status: 'active' },
+    'emp-c': { id: 'emp-c', manager_id: null, status: 'active' },
+  };
+
+  beforeEach(() => {
+    repository = {
+      findById: jest.fn((_ctx: any, id: string) => Promise.resolve(employees[id])),
+      findByEmail: jest.fn().mockResolvedValue(null),
+      update: jest.fn((_ctx: any, id: string, dto: any) => Promise.resolve({ ...employees[id], ...dto })),
+    };
+    historyRepository = { record: jest.fn().mockResolvedValue(undefined) };
+    auditService = { record: jest.fn().mockResolvedValue(undefined) };
+    transactionService = { runInTransaction: jest.fn((cb: any) => cb({})) };
+    service = new EmployeesService(repository, historyRepository, auditService, transactionService);
+  });
+
+  it('rejects setting an employee as their own manager', async () => {
+    const ctx = makeContext({ scope: ORG_SCOPE });
+    await expect(service.update(ctx, 'emp-a', { manager_id: 'emp-a' })).rejects.toThrow(BadRequestException);
+    expect(repository.update).not.toHaveBeenCalled();
+  });
+
+  it('rejects a manager change that would create a transitive reporting cycle', async () => {
+    const ctx = makeContext({ scope: ORG_SCOPE });
+    // emp-a reports to emp-b reports to emp-c today; making emp-c report to
+    // emp-a would close the loop.
+    await expect(service.update(ctx, 'emp-c', { manager_id: 'emp-a' })).rejects.toThrow(BadRequestException);
+    expect(repository.update).not.toHaveBeenCalled();
+  });
+
+  it('allows a manager change that does not create a cycle', async () => {
+    const ctx = makeContext({ scope: ORG_SCOPE });
+    employees['emp-d'] = { id: 'emp-d', manager_id: null, status: 'active' };
+    await expect(service.update(ctx, 'emp-a', { manager_id: 'emp-d' })).resolves.toBeDefined();
+    expect(repository.update).toHaveBeenCalled();
+  });
+
+  it('skips the check entirely when manager_id is unchanged or absent', async () => {
+    const ctx = makeContext({ scope: ORG_SCOPE });
+    await service.update(ctx, 'emp-a', { manager_id: 'emp-b' });
+    expect(repository.update).toHaveBeenCalled();
   });
 });

@@ -210,9 +210,24 @@ export class EmployeesRepository extends BaseRepository {
       values.push(data.work_email);
       paramIndex++;
     }
+    if (data.personal_email !== undefined) {
+      updates.push(`personal_email = $${paramIndex}`);
+      values.push(data.personal_email);
+      paramIndex++;
+    }
     if (data.phone !== undefined) {
       updates.push(`phone = $${paramIndex}`);
       values.push(data.phone);
+      paramIndex++;
+    }
+    if (data.dob !== undefined) {
+      updates.push(`dob = $${paramIndex}`);
+      values.push(data.dob);
+      paramIndex++;
+    }
+    if (data.gender !== undefined) {
+      updates.push(`gender = $${paramIndex}`);
+      values.push(data.gender);
       paramIndex++;
     }
     if (data.department_id !== undefined) {
