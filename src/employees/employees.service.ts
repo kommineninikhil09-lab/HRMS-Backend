@@ -4,7 +4,7 @@ import { EmploymentHistoryRepository } from '../employment-history/employment-hi
 import { TenantContext } from '../database/tenant-context';
 import { AuditService } from '../audit/audit.service';
 import { TransactionService } from '../database/transaction.service';
-import { scopedEmployeeIds } from '../common/scope/scope.util';
+import { assertActingOnEmployee, scopedEmployeeIds } from '../common/scope/scope.util';
 
 export interface CreateEmployeeDTO {
   employee_code: string;
@@ -90,6 +90,7 @@ export class EmployeesService {
     if (!employee) {
       throw new NotFoundException('Employee not found');
     }
+    assertActingOnEmployee(tenantContext, id);
     return employee;
   }
 
@@ -103,6 +104,7 @@ export class EmployeesService {
     if (!employee) {
       throw new NotFoundException('Employee not found');
     }
+    assertActingOnEmployee(tenantContext, id);
 
     if (dto.work_email && dto.work_email !== employee.work_email) {
       const withEmail = await this.repository.findByEmail(tenantContext, dto.work_email);
@@ -154,6 +156,7 @@ export class EmployeesService {
     if (!employee) {
       throw new NotFoundException('Employee not found');
     }
+    assertActingOnEmployee(tenantContext, id);
 
     return this.transactionService.runInTransaction(async (client) => {
       await this.auditService.record(tenantContext, {
