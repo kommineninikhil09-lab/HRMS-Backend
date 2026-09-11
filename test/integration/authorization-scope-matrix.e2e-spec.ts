@@ -367,6 +367,37 @@ describe('Authorization scope matrix (E2E)', () => {
     });
   });
 
+  describe('Employees — employment-history endpoint (P3-01)', () => {
+    it('self scope: reaches your own history, 403s on anyone else', async () => {
+      await request(http)
+        .get(`/api/v1/employees/${inScopeEmployeeId}/employment-history`)
+        .set('Authorization', `Bearer ${selfToken}`)
+        .expect(200);
+      await request(http)
+        .get(`/api/v1/employees/${outOfScopeEmployeeId}/employment-history`)
+        .set('Authorization', `Bearer ${selfToken}`)
+        .expect(403);
+    });
+
+    it('team scope: reaches the in-scope target, 403s on the out-of-scope one', async () => {
+      await request(http)
+        .get(`/api/v1/employees/${inScopeEmployeeId}/employment-history`)
+        .set('Authorization', `Bearer ${teamToken}`)
+        .expect(200);
+      await request(http)
+        .get(`/api/v1/employees/${outOfScopeEmployeeId}/employment-history`)
+        .set('Authorization', `Bearer ${teamToken}`)
+        .expect(403);
+    });
+
+    it('org scope: reaches any target', async () => {
+      await request(http)
+        .get(`/api/v1/employees/${outOfScopeEmployeeId}/employment-history`)
+        .set('Authorization', `Bearer ${orgToken}`)
+        .expect(200);
+    });
+  });
+
   describe('Payroll — employee-keyed and slip routes (P1-11, P1-12)', () => {
     it('team scope: reaches the in-scope employee, 403s on the out-of-scope one', async () => {
       await request(http)
