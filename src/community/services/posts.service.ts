@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
 import { PostsRepository, Post, CreatePostDto } from '../repositories/posts.repository';
 import { TenantContext } from '../../database/tenant-context';
 import { AuditService } from '../../audit/audit.service';
@@ -39,6 +39,10 @@ export class PostsService {
 
   async updatePost(tenantContext: TenantContext, postId: string, data: Partial<CreatePostDto>): Promise<Post> {
     const post = await this.getPost(tenantContext, postId);
+
+    if (post.user_id !== tenantContext.userId) {
+      throw new ForbiddenException('only the author can edit this post');
+    }
 
     const updated = await this.postsRepository.update(tenantContext, postId, data);
     if (!updated) {
