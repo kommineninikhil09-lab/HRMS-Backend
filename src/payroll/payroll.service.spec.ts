@@ -220,3 +220,143 @@ describe('PayrollService — resource-keyed slip routes (P1-12)', () => {
     });
   });
 });
+
+describe('PayrollService.assignStructureToEmployee — scope-gating', () => {
+  let structureRepository: any;
+  let assignmentRepository: any;
+  let auditService: any;
+  let service: PayrollService;
+
+  beforeEach(() => {
+    structureRepository = { findById: jest.fn().mockResolvedValue({ id: 'structure-1' }) };
+    assignmentRepository = {
+      create: jest.fn((_tc: any, data: any) => Promise.resolve({ id: 'assignment-1', ...data })),
+    };
+    auditService = { record: jest.fn().mockResolvedValue(undefined) };
+    service = new PayrollService(
+      structureRepository,
+      {} as any,
+      {} as any,
+      assignmentRepository,
+      {} as any,
+      {} as any,
+      auditService,
+      {} as any,
+    );
+  });
+
+  it('team scope: succeeds for an in-scope target, 403s for an out-of-scope one', async () => {
+    const ctxIn = makeContext({ scope: { kind: 'team', employeeIds: new Set(['target-1']) } });
+    await expect(
+      service.assignStructureToEmployee(ctxIn, 'target-1', 'structure-1', '2026-01-01'),
+    ).resolves.toBeDefined();
+
+    const ctxOut = makeContext({ scope: { kind: 'team', employeeIds: new Set(['someone-else']) } });
+    await expect(
+      service.assignStructureToEmployee(ctxOut, 'target-1', 'structure-1', '2026-01-01'),
+    ).rejects.toThrow(ForbiddenException);
+    expect(assignmentRepository.create).toHaveBeenCalledTimes(1);
+  });
+
+  it('org scope: succeeds for any target', async () => {
+    const ctx = makeContext({ scope: ORG_SCOPE });
+    await expect(
+      service.assignStructureToEmployee(ctx, 'anyone', 'structure-1', '2026-01-01'),
+    ).resolves.toBeDefined();
+  });
+});
+
+describe('PayrollService — pending/approved slip listing scope-filtering', () => {
+  let salarySlipRepository: any;
+  let service: PayrollService;
+
+  beforeEach(() => {
+    salarySlipRepository = { findByStatus: jest.fn().mockResolvedValue([]) };
+    service = new PayrollService(
+      {} as any,
+      {} as any,
+      salarySlipRepository,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+    );
+  });
+
+  it('getPendingApprovals: org scope passes null (no filter), team scope passes the resolved set', async () => {
+    await service.getPendingApprovals(makeContext({ scope: ORG_SCOPE }));
+    expect(salarySlipRepository.findByStatus).toHaveBeenCalledWith(expect.anything(), 'draft', null);
+
+    await service.getPendingApprovals(
+      makeContext({ employeeId: 'self-employee-1', scope: { kind: 'team', employeeIds: new Set(['report-1']) } }),
+    );
+    const call = salarySlipRepository.findByStatus.mock.calls[1];
+    expect(new Set(call[2])).toEqual(new Set(['report-1', 'self-employee-1']));
+  });
+
+  it('getApprovedSlips: same scoping behavior', async () => {
+    await service.getApprovedSlips(makeContext({ scope: ORG_SCOPE }));
+    expect(salarySlipRepository.findByStatus).toHaveBeenCalledWith(expect.anything(), 'approved', null);
+  });
+});
+
+describe('PayrollService.generateSalarySlip — amount computation and persistence', () => {
+  let salarySlipRepository: any;
+  let assignmentRepository: any;
+  let structureComponentRepository: any;
+  let slipComponentRepository: any;
+  let auditService: any;
+  let transactionService: any;
+  let service: PayrollService;
+
+  beforeEach(() => {
+    assignmentRepository = {
+      findActiveByEmployee: jest.fn().mockResolvedValue({ structureId: 'structure-1' }),
+    };
+    // amount comes back as a string: numeric(14,2) columns are not parsed by
+    // pg into JS numbers, so this mirrors what Postgres actually returns.
+    structureComponentRepository = {
+      findByStructure: jest.fn().mockResolvedValue([
+        { componentId: 'c-earn', componentName: 'Base', componentType: 'earnings', amount: '5000.00' },
+        { componentId: 'c-ded', componentName: 'Tax', componentType: 'deduction', amount: '1200.50' },
+      ]),
+    };
+    slipComponentRepository = { addComponentToSlip: jest.fn().mockResolvedValue(undefined) };
+    salarySlipRepository = {
+      create: jest.fn((_tc: any, data: any) => Promise.resolve({ id: 'slip-1', ...data })),
+      update: jest.fn((_tc: any, id: string, patch: any) => Promise.resolve({ id, ...patch })),
+    };
+    auditService = { record: jest.fn().mockResolvedValue(undefined) };
+    transactionService = { runInTransaction: jest.fn((cb: any) => cb({})) };
+    service = new PayrollService(
+      {} as any,
+      {} as any,
+      salarySlipRepository,
+      assignmentRepository,
+      structureComponentRepository,
+      slipComponentRepository,
+      auditService,
+      transactionService,
+    );
+  });
+
+  it('sums string numeric amounts correctly instead of concatenating, and persists them', async () => {
+    const result: any = await service.generateSalarySlip(
+      makeContext({ scope: ORG_SCOPE }),
+      'employee-1',
+      '2026-01',
+      'cycle-1',
+    );
+
+    expect(salarySlipRepository.update).toHaveBeenCalledWith(
+      expect.anything(),
+      'slip-1',
+      { gross_amount: 5000, total_deductions: 1200.5, net_amount: 3799.5 },
+      expect.anything(),
+    );
+    expect(result.gross_amount).toBe(5000);
+    expect(result.total_deductions).toBe(1200.5);
+    expect(result.net_amount).toBe(3799.5);
+  });
+});

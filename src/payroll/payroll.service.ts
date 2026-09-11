@@ -8,7 +8,7 @@ import { SalarySlipRepository } from './repositories/salary-slip.repository';
 import { SalaryAssignmentRepository } from './repositories/salary-assignment.repository';
 import { StructureComponentRepository } from './repositories/structure-component.repository';
 import { SlipComponentRepository } from './repositories/slip-component.repository';
-import { assertActingOnEmployee } from '../common/scope/scope.util';
+import { assertActingOnEmployee, scopedEmployeeIds } from '../common/scope/scope.util';
 
 export interface CreateSalaryStructureDTO {
   name: string;
@@ -228,11 +228,11 @@ export class PayrollService {
   }
 
   async getPendingApprovals(tenantContext: TenantContext) {
-    return this.salarySlipRepository.findByStatus(tenantContext, 'draft');
+    return this.salarySlipRepository.findByStatus(tenantContext, 'draft', scopedEmployeeIds(tenantContext));
   }
 
   async getApprovedSlips(tenantContext: TenantContext) {
-    return this.salarySlipRepository.findByStatus(tenantContext, 'approved');
+    return this.salarySlipRepository.findByStatus(tenantContext, 'approved', scopedEmployeeIds(tenantContext));
   }
 
   // Salary Assignment Operations
@@ -242,6 +242,8 @@ export class PayrollService {
     structureId: string,
     effectiveDate: string,
   ) {
+    assertActingOnEmployee(tenantContext, employeeId);
+
     const structure = await this.structureRepository.findById(tenantContext, structureId);
     if (!structure) {
       throw new NotFoundException('Salary structure not found');
@@ -328,7 +330,10 @@ export class PayrollService {
         // interface field names — StructureComponentRepository also goes
         // through BaseRepository.query, which camelCases rows.
         const c = component as any;
-        const amount = c.amount || 0;
+        // amount is numeric(14,2) in Postgres, which pg returns as a string
+        // (no type parser registered) — Number() it explicitly, since `+=`
+        // on a string silently concatenates instead of summing.
+        const amount = Number(c.amount) || 0;
         const componentType = (c.componentType || 'deduction') as 'earnings' | 'deduction' | 'tax';
 
         await this.slipComponentRepository.addComponentToSlip(
