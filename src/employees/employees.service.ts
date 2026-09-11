@@ -4,6 +4,7 @@ import { EmploymentHistoryRepository } from '../employment-history/employment-hi
 import { TenantContext } from '../database/tenant-context';
 import { AuditService } from '../audit/audit.service';
 import { TransactionService } from '../database/transaction.service';
+import { scopedEmployeeIds } from '../common/scope/scope.util';
 
 export interface CreateEmployeeDTO {
   employee_code: string;
@@ -93,7 +94,8 @@ export class EmployeesService {
   }
 
   async getAll(tenantContext: TenantContext, filters?: { status?: string; department_id?: string }) {
-    return this.repository.findAll(tenantContext, filters);
+    const scopedIds = scopedEmployeeIds(tenantContext);
+    return this.repository.findAll(tenantContext, { ...filters, scopedIds });
   }
 
   async update(tenantContext: TenantContext, id: string, dto: UpdateEmployeeDTO) {
