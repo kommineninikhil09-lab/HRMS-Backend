@@ -8,6 +8,7 @@ import { SalarySlipRepository } from './repositories/salary-slip.repository';
 import { SalaryAssignmentRepository } from './repositories/salary-assignment.repository';
 import { StructureComponentRepository } from './repositories/structure-component.repository';
 import { SlipComponentRepository } from './repositories/slip-component.repository';
+import { assertActingOnEmployee } from '../common/scope/scope.util';
 
 export interface CreateSalaryStructureDTO {
   name: string;
@@ -146,6 +147,7 @@ export class PayrollService {
     if (!slip) {
       throw new NotFoundException('Salary slip not found');
     }
+    assertActingOnEmployee(tenantContext, slip.employee_id);
     return slip;
   }
 
@@ -356,6 +358,7 @@ export class PayrollService {
     if (!slip) {
       throw new NotFoundException('Salary slip not found');
     }
+    assertActingOnEmployee(tenantContext, slip.employee_id);
 
     const components = await this.slipComponentRepository.getSlipBreakdown(
       tenantContext,
